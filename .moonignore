@@ -1,0 +1,9 @@
+# Kept out of the published package (moon publish); only src/ and the
+# README ship.
+scripts/
+mise-tasks/
+.github/
+cliff.toml
+AGENTS.md
+CLAUDE.md
+.mise.toml
