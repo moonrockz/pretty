@@ -6,19 +6,19 @@ enum Spec {
   SLine
   SSoft
   SHard
-  SNest(Int, Spec)
-  STab(Int, Spec)
+  SNest(Int32, Spec)
+  STab(Int32, Spec)
   SGroup(Spec)
   SCat(Spec, Spec)
 } derive(Debug)
 
 ///|
-fn pick(rs : @splitmix.RandomState, n : Int) -> Int {
+fn pick(rs : @splitmix.RandomState, n : Int32) -> Int32 {
   rs.next_uint(limit=n.reinterpret_as_uint()).reinterpret_as_int()
 }
 
 ///|
-fn gen_spec(size : Int, rs : @splitmix.RandomState) -> Spec {
+fn gen_spec(size : Int32, rs : @splitmix.RandomState) -> Spec {
   if size <= 1 {
     return match pick(rs, 8) {
       0 => SLine
@@ -94,7 +94,7 @@ fn flat_text(s : Spec) -> String {
 }
 
 ///|
-fn cols(s : String) -> Int {
+fn cols(s : String) -> Int32 {
   let mut n = 0
   for _ in s {
     n += 1
@@ -104,7 +104,7 @@ fn cols(s : String) -> Int {
 
 ///|
 struct Item {
-  indent : Int
+  indent : Int32
   flat : Bool
   spec : Spec
 }
@@ -112,7 +112,7 @@ struct Item {
 ///|
 /// The spec's fit rule, written naively: the items fit when the text up to
 /// the first break (a line in break mode or a hard line) fits in `left`.
-fn model_fits(left : Int, items : @list.List[Item]) -> Bool {
+fn model_fits(left : Int32, items : @list.List[Item]) -> Bool {
   match items {
     Empty => left >= 0
     More(item, tail~) =>
@@ -123,11 +123,11 @@ fn model_fits(left : Int, items : @list.List[Item]) -> Bool {
         SSoft => if item.flat { model_fits(left, tail) } else { true }
         SHard => true
         SNest(_, x) | STab(_, x) | SGroup(x) =>
-          model_fits(left, tail.add({ ..item, spec: x, }))
+          model_fits(left, tail.prepend({ ..item, spec: x, }))
         SCat(a, b) =>
           model_fits(
             left,
-            tail.add({ ..item, spec: b, }).add({ ..item, spec: a, }),
+            tail.prepend({ ..item, spec: b, }).prepend({ ..item, spec: a, }),
           )
       })
   }
@@ -136,10 +136,10 @@ fn model_fits(left : Int, items : @list.List[Item]) -> Bool {
 ///|
 /// Reference renderer: writes indentation and spaces at once, then removes
 /// trailing spaces from each line.
-fn model_render(spec : Spec, width : Int) -> String {
+fn model_render(spec : Spec, width : Int32) -> String {
   let lines : Array[String] = []
   let mut line = ""
-  let mut items : @list.List[Item] = @list.empty().add({
+  let mut items : @list.List[Item] = @list.List([]).prepend({
     indent: 0,
     flat: false,
     spec,
@@ -155,7 +155,7 @@ fn model_render(spec : Spec, width : Int) -> String {
         line = " ".repeat(item.indent)
       }
       SNest(n, x) =>
-        items = items.add({ ..item, indent: item.indent + n, spec: x, })
+        items = items.prepend({ ..item, indent: item.indent + n, spec: x, })
       STab(n, x) => {
         // Written apart from the engine's `next_stop`: count up to the stop.
         let mut stop = item.indent
@@ -165,7 +165,7 @@ fn model_render(spec : Spec, width : Int) -> String {
             stop += 1
           }
         }
-        items = items.add({ ..item, indent: stop, spec: x, })
+        items = items.prepend({ ..item, indent: stop, spec: x, })
       }
       SGroup(x) => {
         let flat = item.flat ||
@@ -173,13 +173,15 @@ fn model_render(spec : Spec, width : Int) -> String {
             !has_hard(x) &&
             model_fits(
               width - cols(line),
-              items.add({ ..item, flat: true, spec: x, }),
+              items.prepend({ ..item, flat: true, spec: x, }),
             )
           )
-        items = items.add({ ..item, flat, spec: x, })
+        items = items.prepend({ ..item, flat, spec: x, })
       }
       SCat(a, b) =>
-        items = items.add({ ..item, spec: b, }).add({ ..item, spec: a, })
+        items = items
+          .prepend({ ..item, spec: b, })
+          .prepend({ ..item, spec: a, })
     }
   }
   lines.push(line)
@@ -187,7 +189,7 @@ fn model_render(spec : Spec, width : Int) -> String {
 }
 
 ///|
-let widths : Array[Int] = [0, 1, 5, 10, 20, 80]
+let widths : Array[Int32] = [0, 1, 5, 10, 20, 80]
 
 ///|
 test "law: render agrees with the reference model at every width" {

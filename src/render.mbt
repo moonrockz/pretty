@@ -6,7 +6,7 @@ priv enum Mode {
 
 ///|
 priv struct Cmd {
-  indent : Int
+  indent : Int32
   mode : Mode
   doc : Doc
 }
@@ -16,13 +16,13 @@ priv struct Cmd {
 /// before the next text, so the engine writes no trailing whitespace.
 priv struct Out {
   buf : StringBuilder
-  mut column : Int
-  mut indent : Int? // indentation not written yet, at the start of a line
-  mut spaces : Int // spaces of flat lines not written yet
+  mut column : Int32
+  mut indent : Int32? // indentation not written yet, at the start of a line
+  mut spaces : Int32 // spaces of flat lines not written yet
 }
 
 ///|
-fn Out::text(self : Out, s : String, width : Int) -> Unit {
+fn Out::text(self : Out, s : String, width : Int32) -> Unit {
   if self.indent is Some(i) {
     self.buf.write_string(" ".repeat(i))
     self.indent = None
@@ -36,13 +36,13 @@ fn Out::text(self : Out, s : String, width : Int) -> Unit {
 }
 
 ///|
-fn Out::space(self : Out, n : Int) -> Unit {
+fn Out::space(self : Out, n : Int32) -> Unit {
   self.spaces += n
   self.column += n
 }
 
 ///|
-fn Out::newline(self : Out, indent : Int) -> Unit {
+fn Out::newline(self : Out, indent : Int32) -> Unit {
   self.buf.write_char('\n')
   self.indent = Some(indent)
   self.spaces = 0
@@ -71,7 +71,7 @@ fn Out::newline(self : Out, indent : Int) -> Unit {
 ///   inspect(@pretty.render(d, width=4), content="[\n  a,\n  b\n]")
 /// }
 /// ```
-pub fn render(doc : Doc, width? : Int = 80) -> String {
+pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
   let out : Out = { buf: StringBuilder(), column: 0, indent: None, spaces: 0, }
   let stack : Array[Cmd] = [{ indent: 0, mode: Break, doc, }]
   while stack.pop() is Some(cmd) {
@@ -119,7 +119,7 @@ pub fn render(doc : Doc, width? : Int = 80) -> String {
 /// Whether `first`, then the commands of `rest` (top of the stack first),
 /// fit in `remaining` columns up to the next line break. A line in break
 /// mode ends the check: the line can break there.
-fn fits(remaining : Int, first : Cmd, rest : Array[Cmd]) -> Bool {
+fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
   let mut left = remaining
   let pending = [first]
   let mut next = rest.length() - 1
@@ -174,7 +174,7 @@ fn fits(remaining : Int, first : Cmd, rest : Array[Cmd]) -> Bool {
 
 ///|
 /// The next multiple of `n` greater than `indent`; `indent` when `n <= 0`.
-fn next_stop(indent : Int, n : Int) -> Int {
+fn next_stop(indent : Int32, n : Int32) -> Int32 {
   if n <= 0 {
     indent
   } else {
