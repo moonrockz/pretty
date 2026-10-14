@@ -8,7 +8,10 @@ is 0.x, a minor release can contain breaking changes.
 
 ## [0.1.1] - 2026-10-14
 
-<!-- Highlights: replace this comment with a few sentences on what this release brings. -->
+This release moves `moonrockz/pretty` to MoonBit toolchain
+0.10.15+943464bfa. The library and its public interface do not change. The
+sources use the new `moon fmt` output, and the tests no longer use the
+deprecated `@list` functions.
 
 ### 🏗️ Build and CI
 
