@@ -13,13 +13,13 @@ struct Doc {
 ///|
 priv enum DocNode {
   Empty
-  Text(String, Int) // the text and its width in code points
-  Line(Int) // the width of the flat form: 1 for `line`, 0 for `softline`
+  Text(String, Int32) // the text and its width in code points
+  Line(Int32) // the width of the flat form: 1 for `line`, 0 for `softline`
   HardLine
   VerbatimLine // a line break with no indentation
-  Nest(Int, Doc)
+  Nest(Int32, Doc)
   Align(Doc)
-  Tab(Int, Doc) // indentation: the next multiple of the Int
+  Tab(Int32, Doc) // indentation: the next multiple of the Int
   Group(Doc)
   IfBreak(Doc, Doc) // broken, flat
   Concat(Doc, Doc)
@@ -37,7 +37,7 @@ pub fn empty() -> Doc {
 }
 
 ///|
-fn columns(s : String) -> Int {
+fn columns(s : String) -> Int32 {
   let mut n = 0
   for _ in s {
     n += 1
@@ -101,7 +101,7 @@ pub fn hardline() -> Doc {
 
 ///|
 /// `d` with the indentation of its line breaks increased by `n`.
-pub fn nest(n : Int, d : Doc) -> Doc {
+pub fn nest(n : Int32, d : Doc) -> Doc {
   make(Nest(n, d), d.has_hardline)
 }
 
@@ -125,7 +125,7 @@ pub fn nest(n : Int, d : Doc) -> Doc {
 ///   )
 /// }
 /// ```
-pub fn tab(n : Int, d : Doc) -> Doc {
+pub fn tab(n : Int32, d : Doc) -> Doc {
   make(Tab(n, d), d.has_hardline)
 }
 
