@@ -1,0 +1,4 @@
+import {
+  "moonrockz/expect",
+  "moonbitlang/core/quickcheck",
+} for "test"

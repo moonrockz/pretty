@@ -141,13 +141,14 @@ test "verbatim adds no indentation" {
 }
 
 ///|
-test "width counts code points" {
+test "width counts grapheme clusters" {
+  // "é" as e + combining acute (2 code points, 1 cluster) and a flag (2
+  // code points of 2 units each, 1 cluster): the text is 3 clusters wide.
+  let word = "e\u{301}x\u{1F1E6}\u{1F1E7}"
+  let d = @pretty.group(@pretty.text(word) + @pretty.line() + @pretty.text("y"))
   @expect.expect_all(s => {
-    let d = @pretty.group(
-      @pretty.text("é😀") + @pretty.line() + @pretty.text("x"),
-    )
-    s.expect(@pretty.render(d, width=4)).to_equal("é😀 x")
-    s.expect(@pretty.render(d, width=3)).to_equal("é😀\nx")
+    s.expect(@pretty.render(d, width=5)).to_equal(word + " y")
+    s.expect(@pretty.render(d, width=4)).to_equal(word + "\ny")
   })
 }
 
@@ -189,4 +190,266 @@ test "deep documents render without recursion" {
     )
   }
   inspect(@pretty.render(d, width=80).length(), content="200001")
+}
+
+///|
+test "a line outside every group breaks by default and is a space with start=Unbroken" {
+  let d = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d)).to_equal("a\nb")
+    s.expect(@pretty.render(d, start=Broken)).to_equal("a\nb")
+    s.expect(@pretty.render(d, start=Unbroken)).to_equal("a b")
+  })
+}
+
+///|
+test "lines writes line feeds, indents only the last line and does not force the group" {
+  @expect.expect_all(s => {
+    s
+    .expect(
+      @pretty.render(
+        @pretty.nest(
+          2,
+          @pretty.text("a") + @pretty.lines(2) + @pretty.text("b"),
+        ),
+      ),
+    )
+    .to_equal("a\n\n  b")
+    // The group fits: `lines` is a break point, not a forced break.
+    let g = @pretty.group(
+      @pretty.text("a") +
+      @pretty.lines(1) +
+      @pretty.text("b") +
+      @pretty.line() +
+      @pretty.text("c"),
+    )
+    s.expect(@pretty.render(g, width=80)).to_equal("a\nb c")
+    s.expect(@pretty.render(@pretty.lines(0))).to_equal("")
+  })
+}
+
+///|
+test "zero_width text is written but has no width" {
+  let d = @pretty.group(
+    @pretty.text("x") +
+    @pretty.zero_width("// a comment longer than the width") +
+    @pretty.line() +
+    @pretty.text("y"),
+  )
+  inspect(
+    @pretty.render(d, width=5),
+    content="x// a comment longer than the width y",
+  )
+}
+
+///|
+test "a strict break is its unbroken text in a flat group and its broken text then a line feed in a broken one" {
+  let d = @pretty.group(
+    @pretty.text("[") +
+    @pretty.nest(
+      2,
+      @pretty.break_("", " ") +
+      @pretty.text("a") +
+      @pretty.break_(",", ", ") +
+      @pretty.text("b"),
+    ) +
+    @pretty.break_("", " ") +
+    @pretty.text("]"),
+  )
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d, width=80)).to_equal("[ a, b ]")
+    s.expect(@pretty.render(d, width=5)).to_equal("[\n  a,\n  b\n]")
+  })
+}
+
+///|
+test "a flex break breaks only when the rest up to the next break does not fit" {
+  let d = @pretty.text("a") +
+    @pretty.flex_break("", " ") +
+    @pretty.text("bbb") +
+    @pretty.flex_break("", " ") +
+    @pretty.text("ccc")
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d, width=7)).to_equal("a bbb\nccc")
+    s.expect(@pretty.render(d, width=80)).to_equal("a bbb ccc")
+    // In Unbroken mode a flex break never breaks.
+    s.expect(@pretty.render(d, width=3, start=Unbroken)).to_equal("a bbb ccc")
+  })
+}
+
+///|
+test "group_alone fits its own document, group fits the rest of the line too" {
+  let body = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+  @expect.expect_all(s => {
+    s
+    .expect(
+      @pretty.render(@pretty.group_alone(body) + @pretty.text("cccc"), width=4),
+    )
+    .to_equal("a bcccc")
+    s
+    .expect(@pretty.render(@pretty.group(body) + @pretty.text("cccc"), width=4))
+    .to_equal("a\nbcccc")
+  })
+}
+
+///|
+test "a nested group_alone that does not fit breaks inside a flat outer group" {
+  // The outer group is checked alone and fits in 80 columns; the inner one
+  // is checked again on its own line and does not fit in 5.
+  let inner = @pretty.group_alone(
+    @pretty.text("xx") + @pretty.break_(",", ", ") + @pretty.text("yy"),
+  )
+  let outer = @pretty.group_alone(
+    @pretty.text("[") +
+    @pretty.break_("", "") +
+    inner +
+    @pretty.break_("", "") +
+    @pretty.text("]"),
+  )
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(outer, width=80)).to_equal("[xx, yy]")
+    s.expect(@pretty.render(outer, width=5)).to_equal("[\nxx,\nyy\n]")
+    s.expect(@pretty.render(outer, width=7)).to_equal("[\nxx, yy\n]")
+  })
+}
+
+///|
+fn block(body : String) -> @pretty.Doc {
+  @pretty.group_alone(
+    @pretty.force_break(
+      @pretty.text("{") +
+      @pretty.nest(2, @pretty.break_("", " ") + @pretty.text(body)) +
+      @pretty.break_("", " ") +
+      @pretty.text("}"),
+    ),
+  )
+}
+
+///|
+fn call(arg : @pretty.Doc) -> @pretty.Doc {
+  @pretty.group_alone(
+    @pretty.text("f(") +
+    @pretty.nest(2, @pretty.break_("", "") + arg) +
+    @pretty.break_("", "") +
+    @pretty.text(")"),
+  )
+}
+
+///|
+test "force_break breaks its group even when it would fit" {
+  inspect(@pretty.render(block("body"), width=80), content="{\n  body\n}")
+}
+
+///|
+test "next_break_fits lets the enclosing group stay flat up to a forced break" {
+  @expect.expect_all(s => {
+    s
+    .expect(@pretty.render(call(block("body")), width=80))
+    .to_equal("f(\n  {\n    body\n  }\n)")
+    s
+    .expect(
+      @pretty.render(
+        call(@pretty.next_break_fits(block("body"), Enabled)),
+        width=80,
+      ),
+    )
+    .to_equal("f({\n    body\n  })")
+    // Disabled outside Enabled wins: the group breaks again.
+    s
+    .expect(
+      @pretty.render(
+        call(
+          @pretty.next_break_fits(
+            @pretty.next_break_fits(block("body"), Enabled),
+            Disabled,
+          ),
+        ),
+        width=80,
+      ),
+    )
+    .to_equal("f(\n  {\n    body\n  }\n)")
+  })
+}
+
+///|
+test "a flex break under a disabled next_break_fits still checks whether the rest fits" {
+  let d = @pretty.next_break_fits(
+    @pretty.text("a") + @pretty.flex_break("", " ") + @pretty.text("bbbb"),
+    Disabled,
+  )
+  inspect(@pretty.render(d, width=4), content="a\nbbbb")
+}
+
+///|
+test "nest_if_broken indents only when its group is broken" {
+  let d = @pretty.group_alone(
+    @pretty.text("a") +
+    @pretty.nest_if_broken(
+      2,
+      @pretty.break_("", " ") +
+      @pretty.text("b") +
+      @pretty.lines(1) +
+      @pretty.text("c"),
+    ),
+  )
+  @expect.expect_all(s => {
+    // Flat: the break is a space, the `lines` gets the outer indentation 0.
+    s.expect(@pretty.render(d, width=80)).to_equal("a b\nc")
+    s.expect(@pretty.render(d, width=2)).to_equal("a\n  b\n  c")
+  })
+}
+
+///|
+test "set_nesting replaces the indentation" {
+  let d = @pretty.nest(
+    4,
+    @pretty.text("a") +
+    @pretty.set_nesting(1, @pretty.lines(1) + @pretty.text("b")),
+  )
+  inspect(@pretty.render(d), content="a\n b")
+}
+
+///|
+test "a force_break or group_alone after a group does not break that group" {
+  let g = @pretty.group(@pretty.text("a") + @pretty.line() + @pretty.text("b"))
+  @expect.expect_all(s => {
+    s
+    .expect(@pretty.render(g + @pretty.force_break(@pretty.text("c"))))
+    .to_equal("a bc")
+    s
+    .expect(
+      @pretty.render(
+        g +
+        @pretty.group_alone(
+          @pretty.force_break(
+            @pretty.text("{") + @pretty.break_("", " ") + @pretty.text("}"),
+          ),
+        ),
+      ),
+    )
+    .to_equal("a b{\n}")
+  })
+}
+
+///|
+test "raw_text keeps its line feeds, adds no indentation and counts every cluster" {
+  let d = @pretty.nest(
+    2,
+    @pretty.raw_text("ab\ncd") + @pretty.flex_break("", " ") + @pretty.text("x"),
+  )
+  @expect.expect_all(s => {
+    // "ab\ncd" is 5 clusters wide: 5 + 1 + 1 > 6 breaks, fits in 7.
+    s.expect(@pretty.render(d, width=6)).to_equal("ab\ncd\n  x")
+    s.expect(@pretty.render(d, width=7)).to_equal("ab\ncd x")
+    // No hard line: a group_alone holding it can stay flat.
+    s
+    .expect(
+      @pretty.render(
+        @pretty.group_alone(
+          @pretty.raw_text("a\nb") + @pretty.break_("", " ") + @pretty.text("c"),
+        ),
+      ),
+    )
+    .to_equal("a\nb c")
+  })
 }

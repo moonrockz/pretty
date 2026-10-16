@@ -1,4 +1,8 @@
 import {
+  "moonrockz/pretty/grapheme",
+}
+
+import {
   "moonrockz/expect",
   "moonbitlang/core/list",
   "moonbitlang/core/quickcheck",

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Generate src/grapheme tables and conformance test from Unicode data (ucd:generate <ucd dir>)"
+set -euo pipefail
+
+exec moon run -q --target wasm scripts/ucd.mbtx -- generate "${1:?usage: mise run ucd:generate <ucd dir>}" src/grapheme

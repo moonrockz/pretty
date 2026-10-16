@@ -13,17 +13,42 @@ struct Doc {
 ///|
 priv enum DocNode {
   Empty
-  Text(String, Int32) // the text and its width in code points
+  Text(String, Int32) // the text and its width in grapheme clusters
+  ZeroWidth(String) // text written with width 0
+  Lines(Int32) // n line feeds and the indentation; a break point that does not force the group
+  Break(String, Int32, String, Int32, BreakKind) // broken text and width, unbroken text and width, kind
   Line(Int32) // the width of the flat form: 1 for `line`, 0 for `softline`
   HardLine
   VerbatimLine // a line break with no indentation
   Nest(Int32, Doc)
+  NestIfBroken(Int32, Doc) // indentation increased only in Broken mode
+  SetNesting(Int32, Doc) // indentation set to the Int
   Align(Doc)
   Tab(Int32, Doc) // indentation: the next multiple of the Int
   Group(Doc)
+  GroupAlone(Doc) // pretty-arena's group: fits on its own document
+  ForceBreak(Doc) // never fits, unless the mode is ForcedBroken
+  NextFits(Doc, NextBreakFits) // changes the mode of the fit check
   IfBreak(Doc, Doc) // broken, flat
   Concat(Doc, Doc)
 }
+
+///|
+/// How a `Break` decides: a strict break follows the mode of its group, a
+/// flex break checks on its own whether the rest fits.
+priv enum BreakKind {
+  Strict
+  Flex
+}
+
+///|
+/// Whether a `next_break_fits` document is in force: `Enabled` makes the
+/// first break inside it count as a fit; `Disabled` turns off every
+/// enabled `next_break_fits` inside it.
+pub(all) enum NextBreakFits {
+  Enabled
+  Disabled
+} derive(Eq, Debug)
 
 ///|
 fn make(node : DocNode, has_hardline : Bool) -> Doc {
@@ -37,12 +62,9 @@ pub fn empty() -> Doc {
 }
 
 ///|
+/// The width of `s`: its number of extended grapheme clusters.
 fn columns(s : String) -> Int32 {
-  let mut n = 0
-  for _ in s {
-    n += 1
-  }
-  n
+  @grapheme.count(s)
 }
 
 ///|
@@ -56,7 +78,9 @@ fn atom(s : String) -> Doc {
 
 ///|
 /// The text `s`. A line feed in `s` is a `hardline()`, so the lines after it
-/// get the current indentation. Width counts code points.
+/// get the current indentation. Width counts extended grapheme clusters
+/// (UAX #29): a character with combining marks, a flag or an emoji
+/// sequence is one column.
 ///
 /// ```mbt check
 /// test {
@@ -72,12 +96,102 @@ pub fn text(s : String) -> Doc {
 }
 
 ///|
+/// The text `s` as one atom (pretty-arena's `Str`): a line feed in `s` is
+/// written as it is, with no indentation after it, and the width of `s`
+/// counts every grapheme cluster, line feeds included, as if `s` were on
+/// one line. It does not force the enclosing group to break. Use it for a
+/// multi-line string literal that a formatter must keep byte for byte
+/// while it lays out the code around it as the Gleam compiler does.
+///
+/// ```mbt check
+/// test {
+///   let d = @pretty.nest(
+///     2,
+///     @pretty.raw_text("ab\ncd") + @pretty.flex_break("", " ") + @pretty.text("x"),
+///   )
+///   inspect(@pretty.render(d, width=7), content="ab\ncd x")
+///   inspect(@pretty.render(d, width=6), content="ab\ncd\n  x")
+/// }
+/// ```
+pub fn raw_text(s : String) -> Doc {
+  atom(s)
+}
+
+///|
 /// The text `s` as it is: a line feed in `s` starts a new line with no
 /// indentation. Use it for text whose bytes must not change, such as a doc
 /// comment. A group that holds a line feed this way always breaks.
 pub fn verbatim(s : String) -> Doc {
   let parts = s.split("\n").map(p => atom(p.to_owned())).collect()
   join(parts, make(VerbatimLine, true))
+}
+
+///|
+/// `n` line feeds, then the indentation (pretty-arena's `Line(n)`). Unlike
+/// `hardline`, it does not force the enclosing group to break: the group
+/// is flat when the text up to the `lines` fits. `lines(0)` is `empty()`.
+///
+/// ```mbt check
+/// test {
+///   inspect(
+///     @pretty.render(
+///       @pretty.nest(2, @pretty.text("a") + @pretty.lines(2) + @pretty.text("b")),
+///     ),
+///     content="a\n\n  b",
+///   )
+/// }
+/// ```
+pub fn lines(n : Int32) -> Doc {
+  if n <= 0 {
+    empty()
+  } else {
+    make(Lines(n), false)
+  }
+}
+
+///|
+/// The text `s` with width 0: it is written, but it does not count toward
+/// the line width. Use it for text the layout must not react to, such as
+/// a comment. `s` must hold no line feed.
+pub fn zero_width(s : String) -> Doc {
+  if s.is_empty() {
+    empty()
+  } else {
+    make(ZeroWidth(s), false)
+  }
+}
+
+///|
+/// A strict break (pretty-arena's `break_`): `unbroken` when the enclosing
+/// group is flat; `broken`, then a line feed and the indentation, when it
+/// is broken. `break_("", " ")` renders like `line()`; `break_(",", ", ")`
+/// writes a trailing comma when broken. The enclosing group decides the
+/// mode (`group` with Wadler's rule, `group_alone` with pretty-arena's).
+///
+/// ```mbt check
+/// test {
+///   let d = @pretty.group_alone(
+///     @pretty.text("a") + @pretty.break_(",", ", ") + @pretty.text("b"),
+///   )
+///   inspect(@pretty.render(d, width=80), content="a, b")
+///   inspect(@pretty.render(d, width=3), content="a,\nb")
+/// }
+/// ```
+pub fn break_(broken : String, unbroken : String) -> Doc {
+  make(
+    Break(broken, columns(broken), unbroken, columns(unbroken), Strict),
+    false,
+  )
+}
+
+///|
+/// A flex break (pretty-arena's `flex_break`): `unbroken` when the rest of
+/// the line up to the next break fits after it, or when the mode is
+/// `Unbroken`; otherwise `broken`, then a line feed and the indentation.
+/// Each flex break decides on its own, so a list of flex breaks fills
+/// lines.
+pub fn flex_break(broken : String, unbroken : String) -> Doc {
+  make(Break(broken, columns(broken), unbroken, columns(unbroken), Flex), false)
 }
 
 ///|
@@ -93,8 +207,9 @@ pub fn softline() -> Doc {
 }
 
 ///|
-/// Always a line break and the indentation. Every group that holds it
-/// breaks.
+/// Always a line break and the indentation. Every `group` that holds it
+/// breaks; a `group_alone` treats it as a `lines(1)` (the text before it
+/// decides whether the group fits).
 pub fn hardline() -> Doc {
   make(HardLine, true)
 }
@@ -103,6 +218,22 @@ pub fn hardline() -> Doc {
 /// `d` with the indentation of its line breaks increased by `n`.
 pub fn nest(n : Int32, d : Doc) -> Doc {
   make(Nest(n, d), d.has_hardline)
+}
+
+///|
+/// `d` with the indentation of its line breaks increased by `n` only when
+/// the enclosing group is broken (pretty-arena's `nest_if_broken`). In a
+/// flat group the indentation does not change, so a `lines` inside `d`
+/// keeps the outer indentation.
+pub fn nest_if_broken(n : Int32, d : Doc) -> Doc {
+  make(NestIfBroken(n, d), d.has_hardline)
+}
+
+///|
+/// `d` with the indentation of its line breaks set to `n` columns
+/// (pretty-arena's `set_nesting`).
+pub fn set_nesting(n : Int32, d : Doc) -> Doc {
+  make(SetNesting(n, d), d.has_hardline)
 }
 
 ///|
@@ -149,6 +280,77 @@ pub fn align(d : Doc) -> Doc {
 /// ```
 pub fn group(d : Doc) -> Doc {
   make(Group(d), d.has_hardline)
+}
+
+///|
+/// `d` on one line when `d` alone fits in the rest of the width (the
+/// Gleam compiler's pretty-arena rule), otherwise `d` with its breaks
+/// broken. Unlike `group`, the text after the group on the same line is
+/// not counted, and the check runs again for a nested `group_alone` even
+/// when the outer one is flat. A `hardline` inside it does not force it
+/// to break: the check stops there, as at a `lines`.
+///
+/// ```mbt check
+/// test {
+///   let body = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+///   inspect(
+///     @pretty.render(@pretty.group_alone(body) + @pretty.text("cc"), width=3),
+///     content="a bcc",
+///   )
+///   inspect(
+///     @pretty.render(@pretty.group(body) + @pretty.text("cc"), width=3),
+///     content="a\nbcc",
+///   )
+///   let with_hardline = @pretty.group_alone(
+///     body + @pretty.hardline() + @pretty.text("c"),
+///   )
+///   inspect(@pretty.render(with_hardline, width=80), content="a b\nc")
+/// }
+/// ```
+pub fn group_alone(d : Doc) -> Doc {
+  make(GroupAlone(d), d.has_hardline)
+}
+
+///|
+/// `d`, and the enclosing group never fits: it breaks. Only
+/// `next_break_fits(_, Enabled)` outside it lets a group stay flat up to
+/// the forced break. The render of `d` does not change.
+pub fn force_break(d : Doc) -> Doc {
+  make(ForceBreak(d), d.has_hardline)
+}
+
+///|
+/// `d` with a changed fit check, as pretty-arena's `next_break_fits`.
+/// `Enabled`: the first break inside `d` ends the check of the enclosing
+/// group with "fits", even past a `force_break`, so a call whose last
+/// argument is a block keeps `f({` on one line. `Disabled`: every enabled
+/// `next_break_fits` inside `d` is ignored. The render of `d` does not
+/// change.
+///
+/// ```mbt check
+/// test {
+///   let block = @pretty.group_alone(
+///     @pretty.force_break(
+///       @pretty.text("{") +
+///       @pretty.nest(2, @pretty.break_("", " ") + @pretty.text("x")) +
+///       @pretty.break_("", " ") +
+///       @pretty.text("}"),
+///     ),
+///   )
+///   let call = @pretty.group_alone(
+///     @pretty.text("f(") +
+///     @pretty.nest(
+///       2,
+///       @pretty.break_("", "") + @pretty.next_break_fits(block, Enabled),
+///     ) +
+///     @pretty.break_("", "") +
+///     @pretty.text(")"),
+///   )
+///   inspect(@pretty.render(call), content="f({\n    x\n  })")
+/// }
+/// ```
+pub fn next_break_fits(d : Doc, mode : NextBreakFits) -> Doc {
+  make(NextFits(d, mode), d.has_hardline)
 }
 
 ///|

@@ -1,8 +1,23 @@
 ///|
+/// The layout mode of a command, as in the Gleam compiler's pretty-arena:
+/// `Unbroken` keeps the breaks of a group on one line, `Broken` splits
+/// them; `ForcedBroken` and `ForcedUnbroken` are set by `next_break_fits`
+/// and only change what `fits` answers.
 priv enum Mode {
-  Flat
-  Break
+  Unbroken
+  Broken
+  ForcedBroken
+  ForcedUnbroken
 }
+
+///|
+/// The mode `render` starts in. `Broken` (the default) breaks a line that
+/// is outside every group; `Unbroken` keeps it flat, as pretty-arena's
+/// `pretty_print` does.
+pub(all) enum Start {
+  Broken
+  Unbroken
+} derive(Eq, Debug)
 
 ///|
 priv struct Cmd {
@@ -50,10 +65,27 @@ fn Out::newline(self : Out, indent : Int32) -> Unit {
 }
 
 ///|
+/// Write the broken text of a break (nothing when it is empty, so no
+/// indentation is flushed before the line feed), then a line feed.
+fn Out::break_line(
+  self : Out,
+  broken : String,
+  width : Int32,
+  indent : Int32,
+) -> Unit {
+  if !broken.is_empty() {
+    self.text(broken, width)
+  }
+  self.newline(indent)
+}
+
+///|
 /// Lay out `doc` in lines of at most `width` columns where its groups
 /// allow. A group is flat when it fits, together with the rest of its line
 /// up to the next possible break. Text wider than `width` stays whole.
-/// Uses explicit stacks, so deep documents render on every target.
+/// `start` is the mode outside every group: `Broken` (the default) breaks
+/// a bare line, `Unbroken` keeps it flat. Uses explicit stacks, so deep
+/// documents render on every target.
 ///
 /// ```mbt check
 /// test {
@@ -71,39 +103,105 @@ fn Out::newline(self : Out, indent : Int32) -> Unit {
 ///   inspect(@pretty.render(d, width=4), content="[\n  a,\n  b\n]")
 /// }
 /// ```
-pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
+pub fn render(
+  doc : Doc,
+  width~ : Int32 = 80,
+  start~ : Start = Broken,
+) -> String {
   let out : Out = { buf: StringBuilder(), column: 0, indent: None, spaces: 0, }
-  let stack : Array[Cmd] = [{ indent: 0, mode: Break, doc, }]
+  let mode : Mode = match start {
+    Broken => Mode::Broken
+    Unbroken => Mode::Unbroken
+  }
+  let stack : Array[Cmd] = [{ indent: 0, mode, doc, }]
   while stack.pop() is Some(cmd) {
     match cmd.doc.node {
       Empty => ()
       Text(s, n) => out.text(s, n)
+      ZeroWidth(s) => out.text(s, 0)
+      Lines(n) =>
+        for _ in 0..<n {
+          out.newline(cmd.indent)
+        }
       Line(n) =>
         match cmd.mode {
-          Flat => out.space(n)
-          Break => out.newline(cmd.indent)
+          Unbroken | ForcedUnbroken => out.space(n)
+          Broken | ForcedBroken => out.newline(cmd.indent)
+        }
+      Break(broken, bw, unbroken, uw, Strict) =>
+        match cmd.mode {
+          Unbroken | ForcedUnbroken => out.text(unbroken, uw)
+          Broken | ForcedBroken => out.break_line(broken, bw, cmd.indent)
+        }
+      Break(broken, bw, unbroken, uw, Flex) =>
+        if cmd.mode is Unbroken ||
+          fits(width - out.column - uw, [], stack, Arena) {
+          out.text(unbroken, uw)
+        } else {
+          out.break_line(broken, bw, cmd.indent)
         }
       HardLine => out.newline(cmd.indent)
       VerbatimLine => out.newline(0)
       Nest(n, d) => stack.push({ ..cmd, indent: cmd.indent + n, doc: d, })
+      NestIfBroken(n, d) =>
+        stack.push({
+          ..cmd,
+          indent: match cmd.mode {
+            Broken => cmd.indent + n
+            Unbroken | ForcedBroken | ForcedUnbroken => cmd.indent
+          },
+          doc: d,
+        })
+      SetNesting(n, d) => stack.push({ ..cmd, indent: n, doc: d, })
       Align(d) => stack.push({ ..cmd, indent: out.column, doc: d, })
       Tab(n, d) =>
         stack.push({ ..cmd, indent: next_stop(cmd.indent, n), doc: d, })
       Group(d) =>
         match cmd.mode {
-          Flat => stack.push({ ..cmd, doc: d, })
-          Break => {
+          Unbroken | ForcedUnbroken => stack.push({ ..cmd, doc: d, })
+          Broken | ForcedBroken => {
             let flat = !d.has_hardline &&
-              fits(width - out.column, { ..cmd, mode: Flat, doc: d, }, stack)
-            stack.push({ ..cmd, mode: if flat { Flat } else { Break }, doc: d, })
+              fits(
+                width - out.column,
+                [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
+                stack,
+                Wadler,
+              )
+            stack.push({
+              ..cmd,
+              mode: if flat {
+                Mode::Unbroken
+              } else {
+                Mode::Broken
+              },
+              doc: d,
+            })
           }
         }
+      GroupAlone(d) => {
+        let flat = fits(
+          width - out.column,
+          [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
+          [],
+          Arena,
+        )
+        stack.push({
+          ..cmd,
+          mode: if flat {
+            Mode::Unbroken
+          } else {
+            Mode::Broken
+          },
+          doc: d,
+        })
+      }
+      ForceBreak(d) | NextFits(d, _) => stack.push({ ..cmd, doc: d, })
       IfBreak(broken, flat) =>
         stack.push({
           ..cmd,
           doc: match cmd.mode {
-            Flat => flat
-            Break => broken
+            Unbroken | ForcedUnbroken => flat
+            Broken | ForcedBroken => broken
           },
         })
       Concat(a, b) => {
@@ -116,15 +214,45 @@ pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
 }
 
 ///|
-/// Whether `first`, then the commands of `rest` (top of the stack first),
-/// fit in `remaining` columns up to the next line break. A line in break
-/// mode ends the check: the line can break there.
-fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
+/// How `fits` reads the commands that come from `rest`, the part of the
+/// line after the document under check. `Wadler` is the rule of `group`:
+/// the rest only adds width up to its next break, so a `force_break` or a
+/// `group_alone` there does not decide for the group. `Arena` is
+/// pretty-arena's rule for a flex break: the rest is checked as it is.
+priv enum RestRule {
+  Wadler
+  Arena
+}
+
+///|
+/// The queue of `fits` with the origin flag of the command whose children
+/// are pushed: a child of a rest command is a rest command too.
+priv struct Pending {
+  queue : Array[(Cmd, Bool)]
+  from_rest : Bool
+}
+
+///|
+fn Pending::push(self : Pending, cmd : Cmd) -> Unit {
+  self.queue.push((cmd, self.from_rest))
+}
+
+///|
+/// Whether the commands of `pending` (last element first), then the
+/// commands of `rest` (top of the stack first, read by `rule`), fit in
+/// `remaining` columns up to the next line break. A line in a broken mode
+/// ends the check: the line can break there.
+fn fits(
+  remaining : Int32,
+  pending : Array[Cmd],
+  rest : Array[Cmd],
+  rule : RestRule,
+) -> Bool {
   let mut left = remaining
-  let pending = [first]
+  let queue : Array[(Cmd, Bool)] = pending.map(c => (c, false))
   let mut next = rest.length() - 1
   while left >= 0 {
-    let cmd = match pending.pop() {
+    let (cmd, from_rest) = match queue.pop() {
       Some(c) => c
       None => {
         if next < 0 {
@@ -132,26 +260,70 @@ fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
         }
         let c = rest[next]
         next -= 1
-        c
+        (c, true)
       }
     }
+    let wadler_rest = from_rest && rule is Wadler
+    let pending = Pending::{ queue, from_rest, }
     match cmd.doc.node {
       Empty => ()
       Text(_, n) => left -= n
+      ZeroWidth(_) => ()
+      Lines(_) => return true
       Line(n) =>
         match cmd.mode {
-          Flat => left -= n
-          Break => return true
+          Unbroken | ForcedUnbroken => left -= n
+          Broken | ForcedBroken => return true
+        }
+      Break(_, _, _, uw, _) =>
+        match cmd.mode {
+          Unbroken | ForcedUnbroken => left -= uw
+          Broken | ForcedBroken => return true
         }
       HardLine | VerbatimLine => return true
-      Nest(_, d) | Align(d) | Tab(_, d) => pending.push({ ..cmd, doc: d, })
+      Nest(_, d)
+      | NestIfBroken(_, d)
+      | SetNesting(_, d)
+      | Align(d)
+      | Tab(_, d) => pending.push({ ..cmd, doc: d, })
       Group(d) =>
         pending.push({
           ..cmd,
           mode: if d.has_hardline {
-            Break
+            Mode::Broken
           } else {
             cmd.mode
+          },
+          doc: d,
+        })
+      GroupAlone(d) =>
+        pending.push({
+          ..cmd,
+          mode: match cmd.mode {
+            Broken if !wadler_rest => Mode::Unbroken
+            m => m
+          },
+          doc: d,
+        })
+      ForceBreak(d) =>
+        if wadler_rest {
+          // The group under check has already decided; the rest's forced
+          // break is a later line.
+          pending.push({ ..cmd, doc: d, })
+        } else {
+          match cmd.mode {
+            ForcedBroken => pending.push({ ..cmd, doc: d, })
+            Unbroken | Broken | ForcedUnbroken => return false
+          }
+        }
+      NextFits(d, Disabled) =>
+        pending.push({ ..cmd, mode: Mode::ForcedUnbroken, doc: d, })
+      NextFits(d, Enabled) =>
+        pending.push({
+          ..cmd,
+          mode: match cmd.mode {
+            ForcedUnbroken => Mode::ForcedUnbroken
+            Unbroken | Broken | ForcedBroken => Mode::ForcedBroken
           },
           doc: d,
         })
@@ -159,8 +331,8 @@ fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
         pending.push({
           ..cmd,
           doc: match cmd.mode {
-            Flat => flat
-            Break => broken
+            Unbroken | ForcedUnbroken => flat
+            Broken | ForcedBroken => broken
           },
         })
       Concat(a, b) => {
