@@ -166,6 +166,22 @@ pub fn render(
             })
           }
         }
+      GroupAlone(d) => {
+        let flat = fits(
+          width - out.column,
+          [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
+          [],
+        )
+        stack.push({
+          ..cmd,
+          mode: if flat {
+            Mode::Unbroken
+          } else {
+            Mode::Broken
+          },
+          doc: d,
+        })
+      }
       IfBreak(broken, flat) =>
         stack.push({
           ..cmd,
@@ -227,6 +243,15 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
             Mode::Broken
           } else {
             cmd.mode
+          },
+          doc: d,
+        })
+      GroupAlone(d) =>
+        pending.push({
+          ..cmd,
+          mode: match cmd.mode {
+            Broken => Mode::Unbroken
+            m => m
           },
           doc: d,
         })

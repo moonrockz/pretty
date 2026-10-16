@@ -24,6 +24,7 @@ priv enum DocNode {
   Align(Doc)
   Tab(Int32, Doc) // indentation: the next multiple of the Int
   Group(Doc)
+  GroupAlone(Doc) // pretty-arena's group: fits on its own document
   IfBreak(Doc, Doc) // broken, flat
   Concat(Doc, Doc)
 }
@@ -134,7 +135,7 @@ pub fn zero_width(s : String) -> Doc {
 ///
 /// ```mbt check
 /// test {
-///   let d = @pretty.group(
+///   let d = @pretty.group_alone(
 ///     @pretty.text("a") + @pretty.break_(",", ", ") + @pretty.text("b"),
 ///   )
 ///   inspect(@pretty.render(d, width=80), content="a, b")
@@ -227,6 +228,30 @@ pub fn align(d : Doc) -> Doc {
 /// ```
 pub fn group(d : Doc) -> Doc {
   make(Group(d), d.has_hardline)
+}
+
+///|
+/// `d` on one line when `d` alone fits in the rest of the width (the
+/// Gleam compiler's pretty-arena rule), otherwise `d` with its breaks
+/// broken. Unlike `group`, the text after the group on the same line is
+/// not counted, and the check runs again for a nested `group_alone` even
+/// when the outer one is flat.
+///
+/// ```mbt check
+/// test {
+///   let body = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+///   inspect(
+///     @pretty.render(@pretty.group_alone(body) + @pretty.text("cc"), width=3),
+///     content="a bcc",
+///   )
+///   inspect(
+///     @pretty.render(@pretty.group(body) + @pretty.text("cc"), width=3),
+///     content="a\nbcc",
+///   )
+/// }
+/// ```
+pub fn group_alone(d : Doc) -> Doc {
+  make(GroupAlone(d), d.has_hardline)
 }
 
 ///|

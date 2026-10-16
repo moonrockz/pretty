@@ -18,6 +18,8 @@ pub fn flex_break(String, String) -> Doc
 
 pub fn group(Doc) -> Doc
 
+pub fn group_alone(Doc) -> Doc
+
 pub fn hardline() -> Doc
 
 pub fn if_break(Doc, Doc) -> Doc

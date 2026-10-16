@@ -275,3 +275,39 @@ test "a flex break breaks only when the rest up to the next break does not fit" 
     s.expect(@pretty.render(d, width=3, start=Unbroken)).to_equal("a bbb ccc")
   })
 }
+
+///|
+test "group_alone fits its own document, group fits the rest of the line too" {
+  let body = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+  @expect.expect_all(s => {
+    s
+    .expect(
+      @pretty.render(@pretty.group_alone(body) + @pretty.text("cccc"), width=4),
+    )
+    .to_equal("a bcccc")
+    s
+    .expect(@pretty.render(@pretty.group(body) + @pretty.text("cccc"), width=4))
+    .to_equal("a\nbcccc")
+  })
+}
+
+///|
+test "a nested group_alone that does not fit breaks inside a flat outer group" {
+  // The outer group is checked alone and fits in 80 columns; the inner one
+  // is checked again on its own line and does not fit in 5.
+  let inner = @pretty.group_alone(
+    @pretty.text("xx") + @pretty.break_(",", ", ") + @pretty.text("yy"),
+  )
+  let outer = @pretty.group_alone(
+    @pretty.text("[") +
+    @pretty.break_("", "") +
+    inner +
+    @pretty.break_("", "") +
+    @pretty.text("]"),
+  )
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(outer, width=80)).to_equal("[xx, yy]")
+    s.expect(@pretty.render(outer, width=5)).to_equal("[\nxx,\nyy\n]")
+    s.expect(@pretty.render(outer, width=7)).to_equal("[\nxx, yy\n]")
+  })
+}
