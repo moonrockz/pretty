@@ -14,6 +14,8 @@ struct Doc {
 priv enum DocNode {
   Empty
   Text(String, Int32) // the text and its width in code points
+  ZeroWidth(String) // text written with width 0
+  Lines(Int32) // n line feeds and the indentation; a break point that does not force the group
   Line(Int32) // the width of the flat form: 1 for `line`, 0 for `softline`
   HardLine
   VerbatimLine // a line break with no indentation
@@ -78,6 +80,41 @@ pub fn text(s : String) -> Doc {
 pub fn verbatim(s : String) -> Doc {
   let parts = s.split("\n").map(p => atom(p.to_owned())).collect()
   join(parts, make(VerbatimLine, true))
+}
+
+///|
+/// `n` line feeds, then the indentation (pretty-arena's `Line(n)`). Unlike
+/// `hardline`, it does not force the enclosing group to break: the group
+/// is flat when the text up to the `lines` fits. `lines(0)` is `empty()`.
+///
+/// ```mbt check
+/// test {
+///   inspect(
+///     @pretty.render(
+///       @pretty.nest(2, @pretty.text("a") + @pretty.lines(2) + @pretty.text("b")),
+///     ),
+///     content="a\n\n  b",
+///   )
+/// }
+/// ```
+pub fn lines(n : Int32) -> Doc {
+  if n <= 0 {
+    empty()
+  } else {
+    make(Lines(n), false)
+  }
+}
+
+///|
+/// The text `s` with width 0: it is written, but it does not count toward
+/// the line width. Use it for text the layout must not react to, such as
+/// a comment. `s` must hold no line feed.
+pub fn zero_width(s : String) -> Doc {
+  if s.is_empty() {
+    empty()
+  } else {
+    make(ZeroWidth(s), false)
+  }
 }
 
 ///|

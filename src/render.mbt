@@ -103,6 +103,11 @@ pub fn render(
     match cmd.doc.node {
       Empty => ()
       Text(s, n) => out.text(s, n)
+      ZeroWidth(s) => out.text(s, 0)
+      Lines(n) =>
+        for _ in 0..<n {
+          out.newline(cmd.indent)
+        }
       Line(n) =>
         match cmd.mode {
           Unbroken | ForcedUnbroken => out.space(n)
@@ -175,6 +180,8 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
     match cmd.doc.node {
       Empty => ()
       Text(_, n) => left -= n
+      ZeroWidth(_) => ()
+      Lines(_) => return true
       Line(n) =>
         match cmd.mode {
           Unbroken | ForcedUnbroken => left -= n

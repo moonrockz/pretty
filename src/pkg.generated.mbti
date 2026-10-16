@@ -22,6 +22,8 @@ pub fn join(Array[Doc], Doc) -> Doc
 
 pub fn line() -> Doc
 
+pub fn lines(Int) -> Doc
+
 pub fn nest(Int, Doc) -> Doc
 
 pub fn render(Doc, width? : Int, start? : Start) -> String
@@ -33,6 +35,8 @@ pub fn tab(Int, Doc) -> Doc
 pub fn text(String) -> Doc
 
 pub fn verbatim(String) -> Doc
+
+pub fn zero_width(String) -> Doc
 
 // Errors
 

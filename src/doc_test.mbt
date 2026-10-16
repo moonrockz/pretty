@@ -200,3 +200,43 @@ test "a line outside every group breaks by default and is a space with start=Unb
     s.expect(@pretty.render(d, start=Unbroken)).to_equal("a b")
   })
 }
+
+///|
+test "lines writes line feeds, indents only the last line and does not force the group" {
+  @expect.expect_all(s => {
+    s
+    .expect(
+      @pretty.render(
+        @pretty.nest(
+          2,
+          @pretty.text("a") + @pretty.lines(2) + @pretty.text("b"),
+        ),
+      ),
+    )
+    .to_equal("a\n\n  b")
+    // The group fits: `lines` is a break point, not a forced break.
+    let g = @pretty.group(
+      @pretty.text("a") +
+      @pretty.lines(1) +
+      @pretty.text("b") +
+      @pretty.line() +
+      @pretty.text("c"),
+    )
+    s.expect(@pretty.render(g, width=80)).to_equal("a\nb c")
+    s.expect(@pretty.render(@pretty.lines(0))).to_equal("")
+  })
+}
+
+///|
+test "zero_width text is written but has no width" {
+  let d = @pretty.group(
+    @pretty.text("x") +
+    @pretty.zero_width("// a comment longer than the width") +
+    @pretty.line() +
+    @pretty.text("y"),
+  )
+  inspect(
+    @pretty.render(d, width=5),
+    content="x// a comment longer than the width y",
+  )
+}
