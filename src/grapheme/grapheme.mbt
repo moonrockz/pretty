@@ -190,8 +190,8 @@ fn each_boundary(s : String, f : (Int32) -> Unit) -> Unit {
 /// The number of extended grapheme clusters in `s` (UAX #29, Unicode
 /// `version()`). A user sees one cluster as one character: `e` with a
 /// combining accent, a flag of two regional indicators or an emoji
-/// sequence joined with ZWJ is one. `count("")` is 0; a lone surrogate
-/// counts as one.
+/// sequence joined with ZWJ is one. `count("")` is 0; a lone surrogate is
+/// a code point of class Other (one cluster, joined by a mark after it).
 ///
 /// ```mbt check
 /// test {

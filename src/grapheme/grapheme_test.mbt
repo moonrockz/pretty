@@ -49,7 +49,7 @@ test "combining marks, CRLF, ZWJ emoji, flags, Hangul and prepend join as UAX #2
     // prepend (Arabic number sign) + digit: one cluster (GB9b); a prepend at the end stays one
     s.expect(@grapheme.count(from_code_points([0x600, 0x661]))).to_equal(1)
     s.expect(@grapheme.count(from_code_points([0x61, 0x600]))).to_equal(2)
-    // a lone surrogate is one cluster (Control), and a pair is one
+    // a lone surrogate is one cluster (class Other), and a pair is one
     s
     .expect(@grapheme.count(String::from_array([(0xD800).unsafe_to_char()])))
     .to_equal(1)
