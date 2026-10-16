@@ -16,6 +16,7 @@ priv enum DocNode {
   Text(String, Int32) // the text and its width in code points
   ZeroWidth(String) // text written with width 0
   Lines(Int32) // n line feeds and the indentation; a break point that does not force the group
+  Break(String, Int32, String, Int32, BreakKind) // broken text and width, unbroken text and width, kind
   Line(Int32) // the width of the flat form: 1 for `line`, 0 for `softline`
   HardLine
   VerbatimLine // a line break with no indentation
@@ -25,6 +26,14 @@ priv enum DocNode {
   Group(Doc)
   IfBreak(Doc, Doc) // broken, flat
   Concat(Doc, Doc)
+}
+
+///|
+/// How a `Break` decides: a strict break follows the mode of its group, a
+/// flex break checks on its own whether the rest fits.
+priv enum BreakKind {
+  Strict
+  Flex
 }
 
 ///|
@@ -115,6 +124,38 @@ pub fn zero_width(s : String) -> Doc {
   } else {
     make(ZeroWidth(s), false)
   }
+}
+
+///|
+/// A strict break (pretty-arena's `break_`): `unbroken` when the enclosing
+/// group is flat; `broken`, then a line feed and the indentation, when it
+/// is broken. `break_("", " ")` is a `line()` whose group `fits` checks
+/// alone; `break_(",", ", ")` writes a trailing comma when broken.
+///
+/// ```mbt check
+/// test {
+///   let d = @pretty.group(
+///     @pretty.text("a") + @pretty.break_(",", ", ") + @pretty.text("b"),
+///   )
+///   inspect(@pretty.render(d, width=80), content="a, b")
+///   inspect(@pretty.render(d, width=3), content="a,\nb")
+/// }
+/// ```
+pub fn break_(broken : String, unbroken : String) -> Doc {
+  make(
+    Break(broken, columns(broken), unbroken, columns(unbroken), Strict),
+    false,
+  )
+}
+
+///|
+/// A flex break (pretty-arena's `flex_break`): `unbroken` when the rest of
+/// the line up to the next break fits after it, or when the mode is
+/// `Unbroken`; otherwise `broken`, then a line feed and the indentation.
+/// Each flex break decides on its own, so a list of flex breaks fills
+/// lines.
+pub fn flex_break(broken : String, unbroken : String) -> Doc {
+  make(Break(broken, columns(broken), unbroken, columns(unbroken), Flex), false)
 }
 
 ///|

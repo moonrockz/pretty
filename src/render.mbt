@@ -65,6 +65,21 @@ fn Out::newline(self : Out, indent : Int32) -> Unit {
 }
 
 ///|
+/// Write the broken text of a break (nothing when it is empty, so no
+/// indentation is flushed before the line feed), then a line feed.
+fn Out::break_line(
+  self : Out,
+  broken : String,
+  width : Int32,
+  indent : Int32,
+) -> Unit {
+  if !broken.is_empty() {
+    self.text(broken, width)
+  }
+  self.newline(indent)
+}
+
+///|
 /// Lay out `doc` in lines of at most `width` columns where its groups
 /// allow. A group is flat when it fits, together with the rest of its line
 /// up to the next possible break. Text wider than `width` stays whole.
@@ -112,6 +127,17 @@ pub fn render(
         match cmd.mode {
           Unbroken | ForcedUnbroken => out.space(n)
           Broken | ForcedBroken => out.newline(cmd.indent)
+        }
+      Break(broken, bw, unbroken, uw, Strict) =>
+        match cmd.mode {
+          Unbroken | ForcedUnbroken => out.text(unbroken, uw)
+          Broken | ForcedBroken => out.break_line(broken, bw, cmd.indent)
+        }
+      Break(broken, bw, unbroken, uw, Flex) =>
+        if cmd.mode is Unbroken || fits(width - out.column - uw, [], stack) {
+          out.text(unbroken, uw)
+        } else {
+          out.break_line(broken, bw, cmd.indent)
         }
       HardLine => out.newline(cmd.indent)
       VerbatimLine => out.newline(0)
@@ -185,6 +211,11 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
       Line(n) =>
         match cmd.mode {
           Unbroken | ForcedUnbroken => left -= n
+          Broken | ForcedBroken => return true
+        }
+      Break(_, _, _, uw, _) =>
+        match cmd.mode {
+          Unbroken | ForcedUnbroken => left -= uw
           Broken | ForcedBroken => return true
         }
       HardLine | VerbatimLine => return true

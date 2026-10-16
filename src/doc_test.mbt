@@ -240,3 +240,38 @@ test "zero_width text is written but has no width" {
     content="x// a comment longer than the width y",
   )
 }
+
+///|
+test "a strict break is its unbroken text in a flat group and its broken text then a line feed in a broken one" {
+  let d = @pretty.group(
+    @pretty.text("[") +
+    @pretty.nest(
+      2,
+      @pretty.break_("", " ") +
+      @pretty.text("a") +
+      @pretty.break_(",", ", ") +
+      @pretty.text("b"),
+    ) +
+    @pretty.break_("", " ") +
+    @pretty.text("]"),
+  )
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d, width=80)).to_equal("[ a, b ]")
+    s.expect(@pretty.render(d, width=5)).to_equal("[\n  a,\n  b\n]")
+  })
+}
+
+///|
+test "a flex break breaks only when the rest up to the next break does not fit" {
+  let d = @pretty.text("a") +
+    @pretty.flex_break("", " ") +
+    @pretty.text("bbb") +
+    @pretty.flex_break("", " ") +
+    @pretty.text("ccc")
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d, width=7)).to_equal("a bbb\nccc")
+    s.expect(@pretty.render(d, width=80)).to_equal("a bbb ccc")
+    // In Unbroken mode a flex break never breaks.
+    s.expect(@pretty.render(d, width=3, start=Unbroken)).to_equal("a bbb ccc")
+  })
+}

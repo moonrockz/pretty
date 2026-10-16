@@ -8,9 +8,13 @@ import {
 // Values
 pub fn align(Doc) -> Doc
 
+pub fn break_(String, String) -> Doc
+
 pub fn concat(Array[Doc]) -> Doc
 
 pub fn empty() -> Doc
+
+pub fn flex_break(String, String) -> Doc
 
 pub fn group(Doc) -> Doc
 
