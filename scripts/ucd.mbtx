@@ -40,9 +40,9 @@ fn hex(s : String) -> Int32? {
   let mut n = 0
   for c in s {
     let d = match c {
-      '0'..='9' => c.to_int() - '0'.to_int()
-      'a'..='f' => c.to_int() - 'a'.to_int() + 10
-      'A'..='F' => c.to_int() - 'A'.to_int() + 10
+      '0'..<='9' => c.to_int() - '0'.to_int()
+      'a'..<='f' => c.to_int() - 'a'.to_int() + 10
+      'A'..<='F' => c.to_int() - 'A'.to_int() + 10
       _ => return None
     }
     n = n * 16 + d
@@ -86,7 +86,7 @@ fn parse_property_line(line : String) -> Range? {
     fields[1]
   }
   guard !value.is_empty() else { return None }
-  Some({ lo, hi, value })
+  Some({ lo, hi, value, })
 }
 
 ///|
@@ -100,7 +100,11 @@ fn merge(ranges : Array[Range]) -> Array[Range] {
       Some(last) if last.value == r.value && r.lo <= last.hi + 1 =>
         out[out.length() - 1] = {
           ..last,
-          hi: if r.hi > last.hi { r.hi } else { last.hi },
+          hi: if r.hi > last.hi {
+            r.hi
+          } else {
+            last.hi
+          },
         }
       _ => out.push(r)
     }
@@ -157,7 +161,7 @@ fn parse_conformance_line(line : String) -> Case? {
       offset += if cp > 0xFFFF { 2 } else { 1 }
     }
   }
-  Some({ code_points, boundaries })
+  Some({ code_points, boundaries, })
 }
 
 ///|
@@ -311,11 +315,12 @@ async fn main {
         }
       }
       let gcb = ranges_of(gcb_text, gcb_constructor)
-      let ext_pict = ranges_of(@fs.read_file("\{ucd}/emoji-data.txt").text(), v => if v ==
-        "Extended_Pictographic" {
-        Some("ExtPict")
-      } else {
-        None
+      let ext_pict = ranges_of(@fs.read_file("\{ucd}/emoji-data.txt").text(), v => {
+        if v == "Extended_Pictographic" {
+          Some("ExtPict")
+        } else {
+          None
+        }
       })
       let incb = ranges_of(
         @fs.read_file("\{ucd}/DerivedCoreProperties.txt").text(),
@@ -326,7 +331,8 @@ async fn main {
         render_tables(version, gcb, ext_pict, incb),
       )
       let cases = []
-      for line in @fs.read_file("\{ucd}/GraphemeBreakTest.txt").text().split("\n") {
+      for
+        line in @fs.read_file("\{ucd}/GraphemeBreakTest.txt").text().split("\n") {
         match parse_conformance_line(line.to_owned()) {
           Some(c) => cases.push(c)
           None => ()
@@ -384,12 +390,13 @@ impl @moonspec.World for UcdWorld with fn configure(self, setup) {
   setup.when1("I parse the property line {string}", fn(line : String) {
     self.range = parse_property_line(line)
   })
-  setup.then3(
-    "the range is {int} to {int} with value {string}",
-    fn(lo : Int32, hi : Int32, value : String) raise {
-      @expect.expect(self.range).to_equal(Some({ lo, hi, value }))
-    },
-  )
+  setup.then3("the range is {int} to {int} with value {string}", fn(
+    lo : Int32,
+    hi : Int32,
+    value : String,
+  ) raise {
+    @expect.expect(self.range).to_equal(Some({ lo, hi, value, }))
+  })
   setup.then0("there is no range", fn() raise {
     @expect.expect(self.range).to_equal(None)
   })
@@ -410,21 +417,21 @@ impl @moonspec.World for UcdWorld with fn configure(self, setup) {
     self.case_ = parse_conformance_line(line)
   })
   setup.then1("the code points are {string}", fn(text : String) raise {
-    @expect.expect(
-      self.case_.map(c => c.code_points.map(hex_text).join(", ")),
-    ).to_equal(Some(text))
+    @expect.expect(self.case_.map(c => c.code_points.map(hex_text).join(", "))).to_equal(
+      Some(text),
+    )
   })
   setup.then1("the boundaries are {string}", fn(text : String) raise {
     @expect.expect(
       self.case_.map(c => c.boundaries.map(b => b.to_string()).join(", ")),
     ).to_equal(Some(text))
   })
-  setup.when2(
-    "I render the table {string} of {string}",
-    fn(name : String, t : String) {
-      self.text = render_table(name, t, self.ranges)
-    },
-  )
+  setup.when2("I render the table {string} of {string}", fn(
+    name : String,
+    t : String,
+  ) {
+    self.text = render_table(name, t, self.ranges)
+  })
   setup.then1("the rendered text is:", fn(doc : @moonspec.DocString) raise {
     @expect.expect(self.text).to_equal(doc.content)
   })
@@ -433,7 +440,7 @@ impl @moonspec.World for UcdWorld with fn configure(self, setup) {
 ///|
 async test "ucd feature" {
   @moonspec.run_or_fail(
-    () => { range: None, ranges: [], text: "", case_: None },
+    () => { range: None, ranges: [], text: "", case_: None, },
     @moonspec.RunOptions::new([
       @moonspec.FeatureSource::File("features/ucd.feature"),
     ]),
