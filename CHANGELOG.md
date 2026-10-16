@@ -6,6 +6,29 @@ is 0.x, a minor release can contain breaking changes.
 
 <!-- git-cliff: end of header -->
 
+## [0.2.0] - 2026-10-16
+
+The Gleam compiler's pretty-arena document forms: `break_`, `flex_break`,
+`lines`, `zero_width`, `raw_text`, `group_alone`, `force_break`,
+`next_break_fits`, `nest_if_broken` and `set_nesting`, four layout modes
+and a `render` start mode (`start=Unbroken`). Every current builder keeps
+its output; `group` keeps Wadler's fit rule and `group_alone` has
+pretty-arena's. A new package `moonrockz/pretty/grapheme` counts extended
+grapheme clusters (UAX #29, Unicode 17.0.0) from generated tables, checked
+by the 766 cases of GraphemeBreakTest; text widths now count clusters, not
+code points. Laws check the engine against a port of pretty-arena's
+`format` and `fits`.
+
+### ⚠️ Breaking changes
+
+- *(doc)* Text widths count extended grapheme clusters instead of code points; a text with combining marks, flags or ZWJ emoji sequences is narrower, so a group holding one can stay flat where it broke before. ([#5](https://github.com/moonrockz/pretty/pull/5))
+
+### 🚀 Features
+
+- *(doc)* [**breaking**] Pretty-arena document forms and grapheme widths ([#5](https://github.com/moonrockz/pretty/pull/5)) by @DamianReeves
+
+**Full changelog**: https://github.com/moonrockz/pretty/compare/v0.1.1...v0.2.0
+
 ## [0.1.1] - 2026-10-14
 
 This release moves `moonrockz/pretty` to MoonBit toolchain
