@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "moonrockz/pretty"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 pub fn align(Doc) -> Doc
 
@@ -20,7 +24,7 @@ pub fn line() -> Doc
 
 pub fn nest(Int, Doc) -> Doc
 
-pub fn render(Doc, width? : Int) -> String
+pub fn render(Doc, width? : Int, start? : Start) -> String
 
 pub fn softline() -> Doc
 
@@ -35,6 +39,11 @@ pub fn verbatim(String) -> Doc
 // Types and methods
 type Doc
 pub impl Add for Doc
+
+pub(all) enum Start {
+  Broken
+  Unbroken
+} derive(Eq, @debug.Debug)
 
 // Type aliases
 

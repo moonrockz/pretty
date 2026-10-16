@@ -1,8 +1,23 @@
 ///|
+/// The layout mode of a command, as in the Gleam compiler's pretty-arena:
+/// `Unbroken` keeps the breaks of a group on one line, `Broken` splits
+/// them; `ForcedBroken` and `ForcedUnbroken` are set by `next_break_fits`
+/// and only change what `fits` answers.
 priv enum Mode {
-  Flat
-  Break
+  Unbroken
+  Broken
+  ForcedBroken
+  ForcedUnbroken
 }
+
+///|
+/// The mode `render` starts in. `Broken` (the default) breaks a line that
+/// is outside every group; `Unbroken` keeps it flat, as pretty-arena's
+/// `pretty_print` does.
+pub(all) enum Start {
+  Broken
+  Unbroken
+} derive(Eq, Debug)
 
 ///|
 priv struct Cmd {
@@ -53,7 +68,9 @@ fn Out::newline(self : Out, indent : Int32) -> Unit {
 /// Lay out `doc` in lines of at most `width` columns where its groups
 /// allow. A group is flat when it fits, together with the rest of its line
 /// up to the next possible break. Text wider than `width` stays whole.
-/// Uses explicit stacks, so deep documents render on every target.
+/// `start` is the mode outside every group: `Broken` (the default) breaks
+/// a bare line, `Unbroken` keeps it flat. Uses explicit stacks, so deep
+/// documents render on every target.
 ///
 /// ```mbt check
 /// test {
@@ -71,17 +88,25 @@ fn Out::newline(self : Out, indent : Int32) -> Unit {
 ///   inspect(@pretty.render(d, width=4), content="[\n  a,\n  b\n]")
 /// }
 /// ```
-pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
+pub fn render(
+  doc : Doc,
+  width~ : Int32 = 80,
+  start~ : Start = Broken,
+) -> String {
   let out : Out = { buf: StringBuilder(), column: 0, indent: None, spaces: 0, }
-  let stack : Array[Cmd] = [{ indent: 0, mode: Break, doc, }]
+  let mode : Mode = match start {
+    Broken => Mode::Broken
+    Unbroken => Mode::Unbroken
+  }
+  let stack : Array[Cmd] = [{ indent: 0, mode, doc, }]
   while stack.pop() is Some(cmd) {
     match cmd.doc.node {
       Empty => ()
       Text(s, n) => out.text(s, n)
       Line(n) =>
         match cmd.mode {
-          Flat => out.space(n)
-          Break => out.newline(cmd.indent)
+          Unbroken | ForcedUnbroken => out.space(n)
+          Broken | ForcedBroken => out.newline(cmd.indent)
         }
       HardLine => out.newline(cmd.indent)
       VerbatimLine => out.newline(0)
@@ -91,19 +116,31 @@ pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
         stack.push({ ..cmd, indent: next_stop(cmd.indent, n), doc: d, })
       Group(d) =>
         match cmd.mode {
-          Flat => stack.push({ ..cmd, doc: d, })
-          Break => {
+          Unbroken | ForcedUnbroken => stack.push({ ..cmd, doc: d, })
+          Broken | ForcedBroken => {
             let flat = !d.has_hardline &&
-              fits(width - out.column, { ..cmd, mode: Flat, doc: d, }, stack)
-            stack.push({ ..cmd, mode: if flat { Flat } else { Break }, doc: d, })
+              fits(
+                width - out.column,
+                [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
+                stack,
+              )
+            stack.push({
+              ..cmd,
+              mode: if flat {
+                Mode::Unbroken
+              } else {
+                Mode::Broken
+              },
+              doc: d,
+            })
           }
         }
       IfBreak(broken, flat) =>
         stack.push({
           ..cmd,
           doc: match cmd.mode {
-            Flat => flat
-            Break => broken
+            Unbroken | ForcedUnbroken => flat
+            Broken | ForcedBroken => broken
           },
         })
       Concat(a, b) => {
@@ -116,12 +153,12 @@ pub fn render(doc : Doc, width~ : Int32 = 80) -> String {
 }
 
 ///|
-/// Whether `first`, then the commands of `rest` (top of the stack first),
-/// fit in `remaining` columns up to the next line break. A line in break
-/// mode ends the check: the line can break there.
-fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
+/// Whether the commands of `pending` (last element first), then the
+/// commands of `rest` (top of the stack first), fit in `remaining`
+/// columns up to the next line break. A line in a broken mode ends the
+/// check: the line can break there.
+fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
   let mut left = remaining
-  let pending = [first]
   let mut next = rest.length() - 1
   while left >= 0 {
     let cmd = match pending.pop() {
@@ -140,8 +177,8 @@ fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
       Text(_, n) => left -= n
       Line(n) =>
         match cmd.mode {
-          Flat => left -= n
-          Break => return true
+          Unbroken | ForcedUnbroken => left -= n
+          Broken | ForcedBroken => return true
         }
       HardLine | VerbatimLine => return true
       Nest(_, d) | Align(d) | Tab(_, d) => pending.push({ ..cmd, doc: d, })
@@ -149,7 +186,7 @@ fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
         pending.push({
           ..cmd,
           mode: if d.has_hardline {
-            Break
+            Mode::Broken
           } else {
             cmd.mode
           },
@@ -159,8 +196,8 @@ fn fits(remaining : Int32, first : Cmd, rest : Array[Cmd]) -> Bool {
         pending.push({
           ..cmd,
           doc: match cmd.mode {
-            Flat => flat
-            Break => broken
+            Unbroken | ForcedUnbroken => flat
+            Broken | ForcedBroken => broken
           },
         })
       Concat(a, b) => {

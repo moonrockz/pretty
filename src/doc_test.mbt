@@ -190,3 +190,13 @@ test "deep documents render without recursion" {
   }
   inspect(@pretty.render(d, width=80).length(), content="200001")
 }
+
+///|
+test "a line outside every group breaks by default and is a space with start=Unbroken" {
+  let d = @pretty.text("a") + @pretty.line() + @pretty.text("b")
+  @expect.expect_all(s => {
+    s.expect(@pretty.render(d)).to_equal("a\nb")
+    s.expect(@pretty.render(d, start=Broken)).to_equal("a\nb")
+    s.expect(@pretty.render(d, start=Unbroken)).to_equal("a b")
+  })
+}
