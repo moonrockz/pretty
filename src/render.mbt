@@ -134,7 +134,8 @@ pub fn render(
           Broken | ForcedBroken => out.break_line(broken, bw, cmd.indent)
         }
       Break(broken, bw, unbroken, uw, Flex) =>
-        if cmd.mode is Unbroken || fits(width - out.column - uw, [], stack) {
+        if cmd.mode is Unbroken ||
+          fits(width - out.column - uw, [], stack, Arena) {
           out.text(unbroken, uw)
         } else {
           out.break_line(broken, bw, cmd.indent)
@@ -164,6 +165,7 @@ pub fn render(
                 width - out.column,
                 [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
                 stack,
+                Wadler,
               )
             stack.push({
               ..cmd,
@@ -181,6 +183,7 @@ pub fn render(
           width - out.column,
           [{ ..cmd, mode: Mode::Unbroken, doc: d, }],
           [],
+          Arena,
         )
         stack.push({
           ..cmd,
@@ -211,15 +214,45 @@ pub fn render(
 }
 
 ///|
+/// How `fits` reads the commands that come from `rest`, the part of the
+/// line after the document under check. `Wadler` is the rule of `group`:
+/// the rest only adds width up to its next break, so a `force_break` or a
+/// `group_alone` there does not decide for the group. `Arena` is
+/// pretty-arena's rule for a flex break: the rest is checked as it is.
+priv enum RestRule {
+  Wadler
+  Arena
+}
+
+///|
+/// The queue of `fits` with the origin flag of the command whose children
+/// are pushed: a child of a rest command is a rest command too.
+priv struct Pending {
+  queue : Array[(Cmd, Bool)]
+  from_rest : Bool
+}
+
+///|
+fn Pending::push(self : Pending, cmd : Cmd) -> Unit {
+  self.queue.push((cmd, self.from_rest))
+}
+
+///|
 /// Whether the commands of `pending` (last element first), then the
-/// commands of `rest` (top of the stack first), fit in `remaining`
-/// columns up to the next line break. A line in a broken mode ends the
-/// check: the line can break there.
-fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
+/// commands of `rest` (top of the stack first, read by `rule`), fit in
+/// `remaining` columns up to the next line break. A line in a broken mode
+/// ends the check: the line can break there.
+fn fits(
+  remaining : Int32,
+  pending : Array[Cmd],
+  rest : Array[Cmd],
+  rule : RestRule,
+) -> Bool {
   let mut left = remaining
+  let queue : Array[(Cmd, Bool)] = pending.map(c => (c, false))
   let mut next = rest.length() - 1
   while left >= 0 {
-    let cmd = match pending.pop() {
+    let (cmd, from_rest) = match queue.pop() {
       Some(c) => c
       None => {
         if next < 0 {
@@ -227,9 +260,11 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
         }
         let c = rest[next]
         next -= 1
-        c
+        (c, true)
       }
     }
+    let wadler_rest = from_rest && rule is Wadler
+    let pending = Pending::{ queue, from_rest, }
     match cmd.doc.node {
       Empty => ()
       Text(_, n) => left -= n
@@ -265,15 +300,21 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
         pending.push({
           ..cmd,
           mode: match cmd.mode {
-            Broken => Mode::Unbroken
+            Broken if !wadler_rest => Mode::Unbroken
             m => m
           },
           doc: d,
         })
       ForceBreak(d) =>
-        match cmd.mode {
-          ForcedBroken => pending.push({ ..cmd, doc: d, })
-          Unbroken | Broken | ForcedUnbroken => return false
+        if wadler_rest {
+          // The group under check has already decided; the rest's forced
+          // break is a later line.
+          pending.push({ ..cmd, doc: d, })
+        } else {
+          match cmd.mode {
+            ForcedBroken => pending.push({ ..cmd, doc: d, })
+            Unbroken | Broken | ForcedUnbroken => return false
+          }
         }
       NextFits(d, Disabled) =>
         pending.push({ ..cmd, mode: Mode::ForcedUnbroken, doc: d, })

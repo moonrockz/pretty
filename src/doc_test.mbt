@@ -408,3 +408,48 @@ test "set_nesting replaces the indentation" {
   )
   inspect(@pretty.render(d), content="a\n b")
 }
+
+///|
+test "a force_break or group_alone after a group does not break that group" {
+  let g = @pretty.group(@pretty.text("a") + @pretty.line() + @pretty.text("b"))
+  @expect.expect_all(s => {
+    s
+    .expect(@pretty.render(g + @pretty.force_break(@pretty.text("c"))))
+    .to_equal("a bc")
+    s
+    .expect(
+      @pretty.render(
+        g +
+        @pretty.group_alone(
+          @pretty.force_break(
+            @pretty.text("{") + @pretty.break_("", " ") + @pretty.text("}"),
+          ),
+        ),
+      ),
+    )
+    .to_equal("a b{\n}")
+  })
+}
+
+///|
+test "raw_text keeps its line feeds, adds no indentation and counts every cluster" {
+  let d = @pretty.nest(
+    2,
+    @pretty.raw_text("ab\ncd") + @pretty.flex_break("", " ") + @pretty.text("x"),
+  )
+  @expect.expect_all(s => {
+    // "ab\ncd" is 5 clusters wide: 5 + 1 + 1 > 6 breaks, fits in 7.
+    s.expect(@pretty.render(d, width=6)).to_equal("ab\ncd\n  x")
+    s.expect(@pretty.render(d, width=7)).to_equal("ab\ncd x")
+    // No hard line: a group_alone holding it can stay flat.
+    s
+    .expect(
+      @pretty.render(
+        @pretty.group_alone(
+          @pretty.raw_text("a\nb") + @pretty.break_("", " ") + @pretty.text("c"),
+        ),
+      ),
+    )
+    .to_equal("a\nb c")
+  })
+}
