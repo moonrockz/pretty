@@ -13,7 +13,7 @@ struct Doc {
 ///|
 priv enum DocNode {
   Empty
-  Text(String, Int32) // the text and its width in code points
+  Text(String, Int32) // the text and its width in grapheme clusters
   ZeroWidth(String) // text written with width 0
   Lines(Int32) // n line feeds and the indentation; a break point that does not force the group
   Break(String, Int32, String, Int32, BreakKind) // broken text and width, unbroken text and width, kind
@@ -62,12 +62,9 @@ pub fn empty() -> Doc {
 }
 
 ///|
+/// The width of `s`: its number of extended grapheme clusters.
 fn columns(s : String) -> Int32 {
-  let mut n = 0
-  for _ in s {
-    n += 1
-  }
-  n
+  @grapheme.count(s)
 }
 
 ///|
@@ -81,7 +78,9 @@ fn atom(s : String) -> Doc {
 
 ///|
 /// The text `s`. A line feed in `s` is a `hardline()`, so the lines after it
-/// get the current indentation. Width counts code points.
+/// get the current indentation. Width counts extended grapheme clusters
+/// (UAX #29): a character with combining marks, a flag or an emoji
+/// sequence is one column.
 ///
 /// ```mbt check
 /// test {

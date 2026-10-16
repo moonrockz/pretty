@@ -141,13 +141,14 @@ test "verbatim adds no indentation" {
 }
 
 ///|
-test "width counts code points" {
+test "width counts grapheme clusters" {
+  // "é" as e + combining acute (2 code points, 1 cluster) and a flag (2
+  // code points of 2 units each, 1 cluster): the text is 3 clusters wide.
+  let word = "e\u{301}x\u{1F1E6}\u{1F1E7}"
+  let d = @pretty.group(@pretty.text(word) + @pretty.line() + @pretty.text("y"))
   @expect.expect_all(s => {
-    let d = @pretty.group(
-      @pretty.text("é😀") + @pretty.line() + @pretty.text("x"),
-    )
-    s.expect(@pretty.render(d, width=4)).to_equal("é😀 x")
-    s.expect(@pretty.render(d, width=3)).to_equal("é😀\nx")
+    s.expect(@pretty.render(d, width=5)).to_equal(word + " y")
+    s.expect(@pretty.render(d, width=4)).to_equal(word + "\ny")
   })
 }
 
