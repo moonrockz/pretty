@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonrockz/pretty/grapheme"
+
+// Values
+pub fn boundaries(String) -> Array[Int]
+
+pub fn count(String) -> Int
+
+pub fn version() -> String
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

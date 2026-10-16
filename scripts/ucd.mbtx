@@ -1,0 +1,442 @@
+///|
+import {
+  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.4/fs",
+  "moonbitlang/x@0.5.5/sys",
+  "moonbitlang/core/env",
+  "moonrockz/moonspec@0.11.0",
+  "moonrockz/expect@0.6.0",
+}
+
+///|
+/// Generate the grapheme tables and the conformance test of
+/// `src/grapheme` from a directory of Unicode Character Database files:
+///
+///   ucd.mbtx generate <ucd dir> <src/grapheme dir>
+///
+/// `<ucd dir>` holds `GraphemeBreakProperty.txt`, `emoji-data.txt`,
+/// `DerivedCoreProperties.txt` and `GraphemeBreakTest.txt` of one Unicode
+/// version (https://www.unicode.org/Public/<version>/ucd/, the first and
+/// the last under `auxiliary/`, `emoji-data.txt` under `emoji/`). The
+/// script writes `tables.mbt` and `conformance_test.mbt` into
+/// `<src/grapheme dir>`.
+
+///|
+let usage : String = "Usage: ucd.mbtx generate <ucd dir> <src/grapheme dir>"
+
+///|
+/// One code point range with a property value.
+struct Range {
+  lo : Int32
+  hi : Int32
+  value : String
+} derive(Eq, Debug)
+
+///|
+/// The value of a hexadecimal string such as `1F1E6`; `None` when it is
+/// empty or holds another character.
+fn hex(s : String) -> Int32? {
+  guard !s.is_empty() else { return None }
+  let mut n = 0
+  for c in s {
+    let d = match c {
+      '0'..='9' => c.to_int() - '0'.to_int()
+      'a'..='f' => c.to_int() - 'a'.to_int() + 10
+      'A'..='F' => c.to_int() - 'A'.to_int() + 10
+      _ => return None
+    }
+    n = n * 16 + d
+  }
+  Some(n)
+}
+
+///|
+/// Parse `XXXX..YYYY ; Value # ...` or `XXXX ; Value # ...`; for a
+/// `DerivedCoreProperties.txt` line `XXXX ; InCB; Value # ...` the value is
+/// `InCB Value`. `None` for a comment, an empty line or any other line.
+fn parse_property_line(line : String) -> Range? {
+  let body = match line.find("#") {
+    Some(i) => line.view(end_offset=i)
+    None => line.view()
+  }
+  let fields : Array[String] = body
+    .split(";")
+    .map(f => f.trim().to_owned())
+    .collect()
+  guard fields.length() >= 2 && !fields[0].is_empty() else { return None }
+  let (lo, hi) = match fields[0].find("..") {
+    Some(i) =>
+      match
+        (
+          hex(fields[0].view(end_offset=i).to_owned()),
+          hex(fields[0].view(start_offset=i + 2).to_owned()),
+        ) {
+        (Some(lo), Some(hi)) => (lo, hi)
+        _ => return None
+      }
+    None =>
+      match hex(fields[0]) {
+        Some(n) => (n, n)
+        None => return None
+      }
+  }
+  let value = if fields.length() >= 3 && fields[1] == "InCB" {
+    "InCB " + fields[2]
+  } else {
+    fields[1]
+  }
+  guard !value.is_empty() else { return None }
+  Some({ lo, hi, value })
+}
+
+///|
+/// Sort by start and merge adjacent or overlapping ranges of one value.
+fn merge(ranges : Array[Range]) -> Array[Range] {
+  let sorted = ranges.copy()
+  sorted.sort_by((a, b) => a.lo.compare(b.lo))
+  let out : Array[Range] = []
+  for r in sorted {
+    match out.last() {
+      Some(last) if last.value == r.value && r.lo <= last.hi + 1 =>
+        out[out.length() - 1] = {
+          ..last,
+          hi: if r.hi > last.hi { r.hi } else { last.hi },
+        }
+      _ => out.push(r)
+    }
+  }
+  out
+}
+
+///|
+/// The version in a header line like `# GraphemeBreakProperty-17.0.0.txt`.
+fn header_version(line : String) -> String? {
+  guard line.find("-") is Some(i) && line.find(".txt") is Some(j) && j > i else {
+    return None
+  }
+  Some(line.view(start_offset=i + 1, end_offset=j).to_owned())
+}
+
+///|
+/// A conformance case: code points and the UTF-16 offsets of the cluster
+/// starts.
+struct Case {
+  code_points : Array[Int32]
+  boundaries : Array[Int32]
+} derive(Eq, Debug)
+
+///|
+/// Parse `÷ 0020 × 0308 ÷ 1F1E6 × 1F1E7 ÷ # ...`: a `÷` before a code
+/// point starts a cluster there, a `×` joins it to the previous one.
+fn parse_conformance_line(line : String) -> Case? {
+  let body = match line.find("#") {
+    Some(i) => line.view(end_offset=i).to_owned()
+    None => line
+  }
+  let tokens : Array[String] = body
+    .split(" ")
+    .map(t => t.trim().to_owned())
+    .filter(t => !t.is_empty())
+    .collect()
+  guard tokens.length() >= 3 else { return None }
+  let code_points = []
+  let boundaries = []
+  let mut offset = 0
+  let mut starts = false
+  for t in tokens {
+    if t == "÷" {
+      starts = true
+    } else if t == "×" {
+      starts = false
+    } else {
+      guard hex(t) is Some(cp) else { return None }
+      if starts {
+        boundaries.push(offset)
+      }
+      code_points.push(cp)
+      offset += if cp > 0xFFFF { 2 } else { 1 }
+    }
+  }
+  Some({ code_points, boundaries })
+}
+
+///|
+fn hex_text(n : Int32) -> String {
+  "0x" + n.to_string(radix=16).to_upper()
+}
+
+///|
+/// Render `let <name> : Array[(Int, Int, <type>)] = [...]`.
+fn render_table(
+  name : String,
+  type_name : String,
+  ranges : Array[Range],
+) -> String {
+  let sb = StringBuilder()
+  sb.write_string("let \{name} : Array[(Int, Int, \{type_name})] = [\n")
+  for r in ranges {
+    sb.write_string("  (\{hex_text(r.lo)}, \{hex_text(r.hi)}, \{r.value}),\n")
+  }
+  sb.write_string("]")
+  sb.to_string()
+}
+
+///|
+/// Render `let <name> : Array[(Int, Int)] = [...]` for a boolean property.
+fn render_flag_table(name : String, ranges : Array[Range]) -> String {
+  let sb = StringBuilder()
+  sb.write_string("let \{name} : Array[(Int, Int)] = [\n")
+  for r in ranges {
+    sb.write_string("  (\{hex_text(r.lo)}, \{hex_text(r.hi)}),\n")
+  }
+  sb.write_string("]")
+  sb.to_string()
+}
+
+///|
+/// The MoonBit constructor of a Grapheme_Cluster_Break value.
+fn gcb_constructor(value : String) -> String? {
+  match value {
+    "CR"
+    | "LF"
+    | "Control"
+    | "Extend"
+    | "ZWJ"
+    | "Prepend"
+    | "SpacingMark"
+    | "L"
+    | "V"
+    | "T"
+    | "LV"
+    | "LVT" => Some(value)
+    "Regional_Indicator" => Some("RegionalIndicator")
+    _ => None
+  }
+}
+
+///|
+/// The MoonBit constructor of an InCB value; `None` for `InCB None`.
+fn incb_constructor(value : String) -> String? {
+  match value {
+    "InCB Consonant" => Some("Consonant")
+    "InCB Linker" => Some("Linker")
+    "InCB Extend" => Some("IncbExtend")
+    _ => None
+  }
+}
+
+///|
+fn ranges_of(text : String, keep : (String) -> String?) -> Array[Range] {
+  let out = []
+  for line in text.split("\n") {
+    match parse_property_line(line.to_owned()) {
+      Some(r) =>
+        match keep(r.value) {
+          Some(value) => out.push({ ..r, value, })
+          None => ()
+        }
+      None => ()
+    }
+  }
+  merge(out)
+}
+
+///|
+fn render_tables(
+  version : String,
+  gcb : Array[Range],
+  ext_pict : Array[Range],
+  incb : Array[Range],
+) -> String {
+  [
+    "///|",
+    "/// Generated by scripts/ucd.mbtx from the Unicode \{version} Character",
+    "/// Database (GraphemeBreakProperty.txt, emoji-data.txt,",
+    "/// DerivedCoreProperties.txt). Do not edit; run `mise run ucd:generate`.",
+    "let unicode_version : String = \"\{version}\"",
+    "",
+    "///|",
+    render_table("gcb_table", "Gcb", gcb),
+    "",
+    "///|",
+    render_flag_table("ext_pict_table", ext_pict),
+    "",
+    "///|",
+    render_table("incb_table", "Incb", incb),
+    "",
+  ].join("\n")
+}
+
+///|
+fn render_conformance(version : String, cases : Array[Case]) -> String {
+  let sb = StringBuilder()
+  sb.write_string(
+    "///|\n/// Generated by scripts/ucd.mbtx from GraphemeBreakTest.txt of Unicode\n/// \{version}. Do not edit; run `mise run ucd:generate`.\n",
+  )
+  sb.write_string(
+    "let conformance_cases : Array[(Array[Int], Array[Int])] = [\n",
+  )
+  for c in cases {
+    let cps = c.code_points.map(hex_text).join(", ")
+    let bs = c.boundaries.map(b => b.to_string()).join(", ")
+    sb.write_string("  ([\{cps}], [\{bs}]),\n")
+  }
+  sb.write_string("]\n\n")
+  sb.write_string(
+    "///|\ntest \"conformance: every case of GraphemeBreakTest \{version}\" {\n" +
+    "  @expect.expect_all(s => for c in conformance_cases {\n" +
+    "    let (cps, expected) = c\n" +
+    "    s.expect(@grapheme.boundaries(from_code_points(cps))).to_equal(expected)\n" +
+    "  })\n}\n",
+  )
+  sb.to_string()
+}
+
+///|
+async fn main {
+  match @env.args()[1:] {
+    ["generate", ucd, out] => {
+      let gcb_text = @fs.read_file("\{ucd}/GraphemeBreakProperty.txt").text()
+      let first_line = gcb_text
+        .split("\n")
+        .head()
+        .map(l => l.to_owned())
+        .unwrap_or("")
+      let version = match header_version(first_line) {
+        Some(v) => v
+        None => {
+          eprintln("GraphemeBreakProperty.txt: no version in the first line")
+          @sys.exit(1)
+          return
+        }
+      }
+      let gcb = ranges_of(gcb_text, gcb_constructor)
+      let ext_pict = ranges_of(@fs.read_file("\{ucd}/emoji-data.txt").text(), v => if v ==
+        "Extended_Pictographic" {
+        Some("ExtPict")
+      } else {
+        None
+      })
+      let incb = ranges_of(
+        @fs.read_file("\{ucd}/DerivedCoreProperties.txt").text(),
+        incb_constructor,
+      )
+      @fs.write_file(
+        "\{out}/tables.mbt",
+        render_tables(version, gcb, ext_pict, incb),
+      )
+      let cases = []
+      for line in @fs.read_file("\{ucd}/GraphemeBreakTest.txt").text().split("\n") {
+        match parse_conformance_line(line.to_owned()) {
+          Some(c) => cases.push(c)
+          None => ()
+        }
+      }
+      @fs.write_file(
+        "\{out}/conformance_test.mbt",
+        render_conformance(version, cases),
+      )
+      println(
+        "Unicode \{version}: \{gcb.length()} GCB ranges, \{ext_pict.length()} Extended_Pictographic ranges, \{incb.length()} InCB ranges, \{cases.length()} conformance cases",
+      )
+    }
+    _ => {
+      eprintln(usage)
+      @sys.exit(2)
+    }
+  }
+}
+
+///|
+/// Scenario state for `features/ucd.feature`.
+struct UcdWorld {
+  mut range : Range?
+  mut ranges : Array[Range]
+  mut text : String
+  mut case_ : Case?
+}
+
+///|
+/// `0x41-0x5A Extend, 0x61-0x7A Other` as ranges.
+fn parse_ranges(text : String) -> Array[Range] {
+  text
+  .split(",")
+  .map(part => {
+    let p = part.trim().to_owned()
+    let dash = p.find("-").unwrap()
+    let space = p.find(" ").unwrap()
+    {
+      lo: hex(p.view(start_offset=2, end_offset=dash).to_owned()).unwrap(),
+      hi: hex(p.view(start_offset=dash + 3, end_offset=space).to_owned()).unwrap(),
+      value: p.view(start_offset=space + 1).to_owned(),
+    }
+  })
+  .collect()
+}
+
+///|
+fn ranges_text(ranges : Array[Range]) -> String {
+  ranges.map(r => "\{hex_text(r.lo)}-\{hex_text(r.hi)} \{r.value}").join(", ")
+}
+
+///|
+impl @moonspec.World for UcdWorld with fn configure(self, setup) {
+  setup.when1("I parse the property line {string}", fn(line : String) {
+    self.range = parse_property_line(line)
+  })
+  setup.then3(
+    "the range is {int} to {int} with value {string}",
+    fn(lo : Int32, hi : Int32, value : String) raise {
+      @expect.expect(self.range).to_equal(Some({ lo, hi, value }))
+    },
+  )
+  setup.then0("there is no range", fn() raise {
+    @expect.expect(self.range).to_equal(None)
+  })
+  setup.given1("the ranges {string}", fn(text : String) {
+    self.ranges = parse_ranges(text)
+  })
+  setup.when0("I merge the ranges", fn() { self.ranges = merge(self.ranges) })
+  setup.then1("the ranges are {string}", fn(text : String) raise {
+    @expect.expect(ranges_text(self.ranges)).to_equal(text)
+  })
+  setup.when1("I read the version of {string}", fn(line : String) {
+    self.text = header_version(line).unwrap_or("")
+  })
+  setup.then1("the version is {string}", fn(v : String) raise {
+    @expect.expect(self.text).to_equal(v)
+  })
+  setup.when1("I parse the conformance line {string}", fn(line : String) {
+    self.case_ = parse_conformance_line(line)
+  })
+  setup.then1("the code points are {string}", fn(text : String) raise {
+    @expect.expect(
+      self.case_.map(c => c.code_points.map(hex_text).join(", ")),
+    ).to_equal(Some(text))
+  })
+  setup.then1("the boundaries are {string}", fn(text : String) raise {
+    @expect.expect(
+      self.case_.map(c => c.boundaries.map(b => b.to_string()).join(", ")),
+    ).to_equal(Some(text))
+  })
+  setup.when2(
+    "I render the table {string} of {string}",
+    fn(name : String, t : String) {
+      self.text = render_table(name, t, self.ranges)
+    },
+  )
+  setup.then1("the rendered text is:", fn(doc : @moonspec.DocString) raise {
+    @expect.expect(self.text).to_equal(doc.content)
+  })
+}
+
+///|
+async test "ucd feature" {
+  @moonspec.run_or_fail(
+    () => { range: None, ranges: [], text: "", case_: None },
+    @moonspec.RunOptions::new([
+      @moonspec.FeatureSource::File("features/ucd.feature"),
+    ]),
+  )
+  |> ignore
+}
