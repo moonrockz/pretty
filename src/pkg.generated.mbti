@@ -16,6 +16,8 @@ pub fn empty() -> Doc
 
 pub fn flex_break(String, String) -> Doc
 
+pub fn force_break(Doc) -> Doc
+
 pub fn group(Doc) -> Doc
 
 pub fn group_alone(Doc) -> Doc
@@ -31,6 +33,8 @@ pub fn line() -> Doc
 pub fn lines(Int) -> Doc
 
 pub fn nest(Int, Doc) -> Doc
+
+pub fn next_break_fits(Doc, NextBreakFits) -> Doc
 
 pub fn render(Doc, width? : Int, start? : Start) -> String
 
@@ -49,6 +53,11 @@ pub fn zero_width(String) -> Doc
 // Types and methods
 type Doc
 pub impl Add for Doc
+
+pub(all) enum NextBreakFits {
+  Enabled
+  Disabled
+} derive(Eq, @debug.Debug)
 
 pub(all) enum Start {
   Broken

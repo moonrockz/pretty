@@ -311,3 +311,70 @@ test "a nested group_alone that does not fit breaks inside a flat outer group" {
     s.expect(@pretty.render(outer, width=7)).to_equal("[\nxx, yy\n]")
   })
 }
+
+///|
+fn block(body : String) -> @pretty.Doc {
+  @pretty.group_alone(
+    @pretty.force_break(
+      @pretty.text("{") +
+      @pretty.nest(2, @pretty.break_("", " ") + @pretty.text(body)) +
+      @pretty.break_("", " ") +
+      @pretty.text("}"),
+    ),
+  )
+}
+
+///|
+fn call(arg : @pretty.Doc) -> @pretty.Doc {
+  @pretty.group_alone(
+    @pretty.text("f(") +
+    @pretty.nest(2, @pretty.break_("", "") + arg) +
+    @pretty.break_("", "") +
+    @pretty.text(")"),
+  )
+}
+
+///|
+test "force_break breaks its group even when it would fit" {
+  inspect(@pretty.render(block("body"), width=80), content="{\n  body\n}")
+}
+
+///|
+test "next_break_fits lets the enclosing group stay flat up to a forced break" {
+  @expect.expect_all(s => {
+    s
+    .expect(@pretty.render(call(block("body")), width=80))
+    .to_equal("f(\n  {\n    body\n  }\n)")
+    s
+    .expect(
+      @pretty.render(
+        call(@pretty.next_break_fits(block("body"), Enabled)),
+        width=80,
+      ),
+    )
+    .to_equal("f({\n    body\n  })")
+    // Disabled outside Enabled wins: the group breaks again.
+    s
+    .expect(
+      @pretty.render(
+        call(
+          @pretty.next_break_fits(
+            @pretty.next_break_fits(block("body"), Enabled),
+            Disabled,
+          ),
+        ),
+        width=80,
+      ),
+    )
+    .to_equal("f(\n  {\n    body\n  }\n)")
+  })
+}
+
+///|
+test "a flex break under a disabled next_break_fits still checks whether the rest fits" {
+  let d = @pretty.next_break_fits(
+    @pretty.text("a") + @pretty.flex_break("", " ") + @pretty.text("bbbb"),
+    Disabled,
+  )
+  inspect(@pretty.render(d, width=4), content="a\nbbbb")
+}

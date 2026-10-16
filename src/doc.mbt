@@ -25,6 +25,8 @@ priv enum DocNode {
   Tab(Int32, Doc) // indentation: the next multiple of the Int
   Group(Doc)
   GroupAlone(Doc) // pretty-arena's group: fits on its own document
+  ForceBreak(Doc) // never fits, unless the mode is ForcedBroken
+  NextFits(Doc, NextBreakFits) // changes the mode of the fit check
   IfBreak(Doc, Doc) // broken, flat
   Concat(Doc, Doc)
 }
@@ -36,6 +38,15 @@ priv enum BreakKind {
   Strict
   Flex
 }
+
+///|
+/// Whether a `next_break_fits` document is in force: `Enabled` makes the
+/// first break inside it count as a fit; `Disabled` turns off every
+/// enabled `next_break_fits` inside it.
+pub(all) enum NextBreakFits {
+  Enabled
+  Disabled
+} derive(Eq, Debug)
 
 ///|
 fn make(node : DocNode, has_hardline : Bool) -> Doc {
@@ -252,6 +263,48 @@ pub fn group(d : Doc) -> Doc {
 /// ```
 pub fn group_alone(d : Doc) -> Doc {
   make(GroupAlone(d), d.has_hardline)
+}
+
+///|
+/// `d`, and the enclosing group never fits: it breaks. Only
+/// `next_break_fits(_, Enabled)` outside it lets a group stay flat up to
+/// the forced break. The render of `d` does not change.
+pub fn force_break(d : Doc) -> Doc {
+  make(ForceBreak(d), d.has_hardline)
+}
+
+///|
+/// `d` with a changed fit check, as pretty-arena's `next_break_fits`.
+/// `Enabled`: the first break inside `d` ends the check of the enclosing
+/// group with "fits", even past a `force_break`, so a call whose last
+/// argument is a block keeps `f({` on one line. `Disabled`: every enabled
+/// `next_break_fits` inside `d` is ignored. The render of `d` does not
+/// change.
+///
+/// ```mbt check
+/// test {
+///   let block = @pretty.group_alone(
+///     @pretty.force_break(
+///       @pretty.text("{") +
+///       @pretty.nest(2, @pretty.break_("", " ") + @pretty.text("x")) +
+///       @pretty.break_("", " ") +
+///       @pretty.text("}"),
+///     ),
+///   )
+///   let call = @pretty.group_alone(
+///     @pretty.text("f(") +
+///     @pretty.nest(
+///       2,
+///       @pretty.break_("", "") + @pretty.next_break_fits(block, Enabled),
+///     ) +
+///     @pretty.break_("", "") +
+///     @pretty.text(")"),
+///   )
+///   inspect(@pretty.render(call), content="f({\n    x\n  })")
+/// }
+/// ```
+pub fn next_break_fits(d : Doc, mode : NextBreakFits) -> Doc {
+  make(NextFits(d, mode), d.has_hardline)
 }
 
 ///|

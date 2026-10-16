@@ -182,6 +182,7 @@ pub fn render(
           doc: d,
         })
       }
+      ForceBreak(d) | NextFits(d, _) => stack.push({ ..cmd, doc: d, })
       IfBreak(broken, flat) =>
         stack.push({
           ..cmd,
@@ -252,6 +253,22 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
           mode: match cmd.mode {
             Broken => Mode::Unbroken
             m => m
+          },
+          doc: d,
+        })
+      ForceBreak(d) =>
+        match cmd.mode {
+          ForcedBroken => pending.push({ ..cmd, doc: d, })
+          Unbroken | Broken | ForcedUnbroken => return false
+        }
+      NextFits(d, Disabled) =>
+        pending.push({ ..cmd, mode: Mode::ForcedUnbroken, doc: d, })
+      NextFits(d, Enabled) =>
+        pending.push({
+          ..cmd,
+          mode: match cmd.mode {
+            ForcedUnbroken => Mode::ForcedUnbroken
+            Unbroken | Broken | ForcedBroken => Mode::ForcedBroken
           },
           doc: d,
         })
