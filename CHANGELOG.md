@@ -6,6 +6,20 @@ is 0.x, a minor release can contain breaking changes.
 
 <!-- git-cliff: end of header -->
 
+## [0.2.0] - 2026-10-16
+
+<!-- Highlights: replace this comment with a few sentences on what this release brings. -->
+
+### ⚠️ Breaking changes
+
+- *(doc)* Text widths count extended grapheme clusters instead of code points; a text with combining marks, flags or ZWJ emoji sequences is narrower, so a group holding one can stay flat where it broke before. ([#5](https://github.com/moonrockz/pretty/pull/5))
+
+### 🚀 Features
+
+- *(doc)* [**breaking**] Pretty-arena document forms and grapheme widths ([#5](https://github.com/moonrockz/pretty/pull/5)) by @DamianReeves
+
+**Full changelog**: https://github.com/moonrockz/pretty/compare/v0.1.1...v0.2.0
+
 ## [0.1.1] - 2026-10-14
 
 This release moves `moonrockz/pretty` to MoonBit toolchain
