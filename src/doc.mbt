@@ -96,6 +96,28 @@ pub fn text(s : String) -> Doc {
 }
 
 ///|
+/// The text `s` as one atom (pretty-arena's `Str`): a line feed in `s` is
+/// written as it is, with no indentation after it, and the width of `s`
+/// counts every grapheme cluster, line feeds included, as if `s` were on
+/// one line. It does not force the enclosing group to break. Use it for a
+/// multi-line string literal that a formatter must keep byte for byte
+/// while it lays out the code around it as the Gleam compiler does.
+///
+/// ```mbt check
+/// test {
+///   let d = @pretty.nest(
+///     2,
+///     @pretty.raw_text("ab\ncd") + @pretty.flex_break("", " ") + @pretty.text("x"),
+///   )
+///   inspect(@pretty.render(d, width=7), content="ab\ncd x")
+///   inspect(@pretty.render(d, width=6), content="ab\ncd\n  x")
+/// }
+/// ```
+pub fn raw_text(s : String) -> Doc {
+  atom(s)
+}
+
+///|
 /// The text `s` as it is: a line feed in `s` starts a new line with no
 /// indentation. Use it for text whose bytes must not change, such as a doc
 /// comment. A group that holds a line feed this way always breaks.
@@ -142,8 +164,9 @@ pub fn zero_width(s : String) -> Doc {
 ///|
 /// A strict break (pretty-arena's `break_`): `unbroken` when the enclosing
 /// group is flat; `broken`, then a line feed and the indentation, when it
-/// is broken. `break_("", " ")` is a `line()` whose group `fits` checks
-/// alone; `break_(",", ", ")` writes a trailing comma when broken.
+/// is broken. `break_("", " ")` renders like `line()`; `break_(",", ", ")`
+/// writes a trailing comma when broken. The enclosing group decides the
+/// mode (`group` with Wadler's rule, `group_alone` with pretty-arena's).
 ///
 /// ```mbt check
 /// test {
@@ -184,8 +207,9 @@ pub fn softline() -> Doc {
 }
 
 ///|
-/// Always a line break and the indentation. Every group that holds it
-/// breaks.
+/// Always a line break and the indentation. Every `group` that holds it
+/// breaks; a `group_alone` treats it as a `lines(1)` (the text before it
+/// decides whether the group fits).
 pub fn hardline() -> Doc {
   make(HardLine, true)
 }
@@ -263,7 +287,8 @@ pub fn group(d : Doc) -> Doc {
 /// Gleam compiler's pretty-arena rule), otherwise `d` with its breaks
 /// broken. Unlike `group`, the text after the group on the same line is
 /// not counted, and the check runs again for a nested `group_alone` even
-/// when the outer one is flat.
+/// when the outer one is flat. A `hardline` inside it does not force it
+/// to break: the check stops there, as at a `lines`.
 ///
 /// ```mbt check
 /// test {
@@ -276,6 +301,10 @@ pub fn group(d : Doc) -> Doc {
 ///     @pretty.render(@pretty.group(body) + @pretty.text("cc"), width=3),
 ///     content="a\nbcc",
 ///   )
+///   let with_hardline = @pretty.group_alone(
+///     body + @pretty.hardline() + @pretty.text("c"),
+///   )
+///   inspect(@pretty.render(with_hardline, width=80), content="a b\nc")
 /// }
 /// ```
 pub fn group_alone(d : Doc) -> Doc {

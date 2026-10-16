@@ -32,6 +32,7 @@ let doc = @pretty.group(
 | `flex_break(b, u)` | `u` | `u` when the rest fits, else `b` and a line break |
 | `lines(n)` | `n` line breaks (does not force the group) | |
 | `zero_width(s)` | `s`, width 0 | `s`, width 0 |
+| `raw_text(s)` | `s` as one atom: line feeds kept, no indentation, every cluster counts | |
 | `force_break(d)` | `d`; its group never fits | |
 | `next_break_fits(d, m)` | `d`; `Enabled` lets the group fit up to the first break in `d` | |
 | `nest_if_broken(n, d)` | `d` | `d`, indented by `n` more |
@@ -41,9 +42,11 @@ let doc = @pretty.group(
   the next possible break (the fit rule of Wadler's "A prettier printer").
 - Evaluation is strict (Lindig, "Strictly Pretty") and uses explicit
   stacks, so deep documents render on wasm, wasm-gc, js and native.
-- The engine writes no trailing whitespace and no indentation on empty
-  lines. Width counts extended grapheme clusters (UAX #29, Unicode 17.0.0;
-  `@grapheme.count`).
+- The engine writes indentation and the spaces of flat lines only before
+  the next text, so a line break never leaves trailing whitespace and an
+  empty line has no indentation. (A `break_` whose unbroken text ends in a
+  space, followed by a `lines`, keeps that space: it is text.) Width counts
+  extended grapheme clusters (UAX #29, Unicode 17.0.0; `@grapheme.count`).
 - `render(doc, width?, start?)`: `start=Unbroken` keeps a line outside
   every group flat, as the Gleam compiler's pretty-arena does. The forms
   `group_alone`, `break_`, `flex_break`, `lines`, `force_break`,
