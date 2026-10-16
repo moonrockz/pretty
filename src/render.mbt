@@ -142,6 +142,16 @@ pub fn render(
       HardLine => out.newline(cmd.indent)
       VerbatimLine => out.newline(0)
       Nest(n, d) => stack.push({ ..cmd, indent: cmd.indent + n, doc: d, })
+      NestIfBroken(n, d) =>
+        stack.push({
+          ..cmd,
+          indent: match cmd.mode {
+            Broken => cmd.indent + n
+            Unbroken | ForcedBroken | ForcedUnbroken => cmd.indent
+          },
+          doc: d,
+        })
+      SetNesting(n, d) => stack.push({ ..cmd, indent: n, doc: d, })
       Align(d) => stack.push({ ..cmd, indent: out.column, doc: d, })
       Tab(n, d) =>
         stack.push({ ..cmd, indent: next_stop(cmd.indent, n), doc: d, })
@@ -236,7 +246,11 @@ fn fits(remaining : Int32, pending : Array[Cmd], rest : Array[Cmd]) -> Bool {
           Broken | ForcedBroken => return true
         }
       HardLine | VerbatimLine => return true
-      Nest(_, d) | Align(d) | Tab(_, d) => pending.push({ ..cmd, doc: d, })
+      Nest(_, d)
+      | NestIfBroken(_, d)
+      | SetNesting(_, d)
+      | Align(d)
+      | Tab(_, d) => pending.push({ ..cmd, doc: d, })
       Group(d) =>
         pending.push({
           ..cmd,

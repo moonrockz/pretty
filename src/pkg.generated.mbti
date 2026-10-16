@@ -34,9 +34,13 @@ pub fn lines(Int) -> Doc
 
 pub fn nest(Int, Doc) -> Doc
 
+pub fn nest_if_broken(Int, Doc) -> Doc
+
 pub fn next_break_fits(Doc, NextBreakFits) -> Doc
 
 pub fn render(Doc, width? : Int, start? : Start) -> String
+
+pub fn set_nesting(Int, Doc) -> Doc
 
 pub fn softline() -> Doc
 

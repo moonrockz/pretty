@@ -378,3 +378,32 @@ test "a flex break under a disabled next_break_fits still checks whether the res
   )
   inspect(@pretty.render(d, width=4), content="a\nbbbb")
 }
+
+///|
+test "nest_if_broken indents only when its group is broken" {
+  let d = @pretty.group_alone(
+    @pretty.text("a") +
+    @pretty.nest_if_broken(
+      2,
+      @pretty.break_("", " ") +
+      @pretty.text("b") +
+      @pretty.lines(1) +
+      @pretty.text("c"),
+    ),
+  )
+  @expect.expect_all(s => {
+    // Flat: the break is a space, the `lines` gets the outer indentation 0.
+    s.expect(@pretty.render(d, width=80)).to_equal("a b\nc")
+    s.expect(@pretty.render(d, width=2)).to_equal("a\n  b\n  c")
+  })
+}
+
+///|
+test "set_nesting replaces the indentation" {
+  let d = @pretty.nest(
+    4,
+    @pretty.text("a") +
+    @pretty.set_nesting(1, @pretty.lines(1) + @pretty.text("b")),
+  )
+  inspect(@pretty.render(d), content="a\n b")
+}

@@ -21,6 +21,8 @@ priv enum DocNode {
   HardLine
   VerbatimLine // a line break with no indentation
   Nest(Int32, Doc)
+  NestIfBroken(Int32, Doc) // indentation increased only in Broken mode
+  SetNesting(Int32, Doc) // indentation set to the Int
   Align(Doc)
   Tab(Int32, Doc) // indentation: the next multiple of the Int
   Group(Doc)
@@ -193,6 +195,22 @@ pub fn hardline() -> Doc {
 /// `d` with the indentation of its line breaks increased by `n`.
 pub fn nest(n : Int32, d : Doc) -> Doc {
   make(Nest(n, d), d.has_hardline)
+}
+
+///|
+/// `d` with the indentation of its line breaks increased by `n` only when
+/// the enclosing group is broken (pretty-arena's `nest_if_broken`). In a
+/// flat group the indentation does not change, so a `lines` inside `d`
+/// keeps the outer indentation.
+pub fn nest_if_broken(n : Int32, d : Doc) -> Doc {
+  make(NestIfBroken(n, d), d.has_hardline)
+}
+
+///|
+/// `d` with the indentation of its line breaks set to `n` columns
+/// (pretty-arena's `set_nesting`).
+pub fn set_nesting(n : Int32, d : Doc) -> Doc {
+  make(SetNesting(n, d), d.has_hardline)
 }
 
 ///|
