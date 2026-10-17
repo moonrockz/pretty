@@ -6,6 +6,19 @@ is 0.x, a minor release can contain breaking changes.
 
 <!-- git-cliff: end of header -->
 
+## [0.3.0] - 2026-10-17
+
+`ungroup` lets a child share the enclosing group's break decision.
+`can_break` reports exposed optional breaks and forced breaks, so a
+formatter can keep long atoms intact while breaking compound children.
+Both operations preserve nested groups; `ungroup` uses an explicit stack.
+
+### 🚀 Features
+
+- *(doc)* Let outer groups share parent breaks ([#7](https://github.com/moonrockz/pretty/pull/7)) by @DamianReeves
+
+**Full changelog**: https://github.com/moonrockz/pretty/compare/v0.2.0...v0.3.0
+
 ## [0.2.0] - 2026-10-16
 
 The Gleam compiler's pretty-arena document forms: `break_`, `flex_break`,
