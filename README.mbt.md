@@ -26,6 +26,7 @@ let doc = @pretty.group(
 | `align(d)` | `d` | `d`, indented to its start column |
 | `tab(n, d)` | `d` | `d`, indented to the next multiple of `n` |
 | `group(d)` | flat if it fits | else broken |
+| `ungroup(d)` | outer groups removed so their breaks follow the enclosing group | |
 | `if_break(b, f)` | `f` | `b` |
 | `group_alone(d)` | flat if `d` alone fits | else broken |
 | `break_(b, u)` | `u` | `b`, then a line break |
@@ -52,3 +53,18 @@ let doc = @pretty.group(
   `group_alone`, `break_`, `flex_break`, `lines`, `force_break`,
   `next_break_fits`, `nest_if_broken`, `set_nesting` and `zero_width`
   have pretty-arena's semantics; `group` keeps Wadler's rule.
+
+`can_break(d)` reports a break controlled by the enclosing group, or a
+forced line break. Optional breaks inside nested groups do not count.
+For a parent whose closing token follows its child's shape, open the
+child's outer groups first:
+
+```mbt check
+test {
+  let child = @pretty.group(@pretty.text("long") + @pretty.line() + @pretty.text("value"))
+  let child = @pretty.ungroup(child)
+  let closing = if @pretty.can_break(child) { @pretty.softline() } else { @pretty.empty() }
+  let doc = @pretty.group(@pretty.text("(") + child + closing + @pretty.text(")"))
+  inspect(@pretty.render(doc, width=11), content="(long\nvalue\n)")
+}
+```
