@@ -10,6 +10,8 @@ pub fn align(Doc) -> Doc
 
 pub fn break_(String, String) -> Doc
 
+pub fn can_break(Doc) -> Bool
+
 pub fn concat(Array[Doc]) -> Doc
 
 pub fn empty() -> Doc
@@ -49,6 +51,8 @@ pub fn softline() -> Doc
 pub fn tab(Int, Doc) -> Doc
 
 pub fn text(String) -> Doc
+
+pub fn ungroup(Doc) -> Doc
 
 pub fn verbatim(String) -> Doc
 

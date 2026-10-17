@@ -8,6 +8,8 @@ struct Doc {
   // Whether the flat form holds a hard line. A group that holds one always
   // breaks.
   has_hardline : Bool
+  outer_groups : Bool
+  breakable : Bool
 }
 
 ///|
@@ -52,7 +54,24 @@ pub(all) enum NextBreakFits {
 
 ///|
 fn make(node : DocNode, has_hardline : Bool) -> Doc {
-  { node, has_hardline, }
+  let (outer_groups, breakable) = match node {
+    Group(_) | GroupAlone(_) => (true, has_hardline)
+    Concat(a, b) =>
+      (a.outer_groups || b.outer_groups, a.breakable || b.breakable)
+    Nest(_, d)
+    | NestIfBroken(_, d)
+    | SetNesting(_, d)
+    | Align(d)
+    | Tab(_, d)
+    | ForceBreak(d)
+    | NextFits(d, _) => (d.outer_groups, d.breakable)
+    IfBreak(broken, flat) =>
+      (broken.outer_groups || flat.outer_groups, flat.breakable)
+    Line(_) | Break(_, _, _, _, _) | HardLine | VerbatimLine | Lines(_) =>
+      (false, true)
+    Empty | Text(_, _) | ZeroWidth(_) => (false, false)
+  }
+  { node, has_hardline, outer_groups, breakable, }
 }
 
 ///|
@@ -392,4 +411,82 @@ pub fn join(docs : Array[Doc], sep : Doc) -> Doc {
 ///|
 pub impl Add for Doc with fn add(self, other) {
   concat2(self, other)
+}
+
+///|
+/// Whether `d` has a line break controlled by its enclosing group, or a
+/// forced line break. A nested group decides its own optional breaks, so
+/// those do not count. `raw_text` line feeds are part of an atom and do
+/// not count. Use with `ungroup` to let a parent follow its child's shape
+/// without breaking a long atom merely because it exceeds the width.
+pub fn can_break(d : Doc) -> Bool {
+  d.breakable
+}
+
+///|
+priv enum UngroupWork {
+  Visit(Doc)
+  Rebuild(Doc)
+}
+
+///|
+/// Remove the outer groups of `d`, through concatenation and indentation
+/// wrappers. The contents of each removed group stay intact, including
+/// their nested groups. Its optional breaks then follow the enclosing
+/// group. Uses an explicit stack and returns documents without outer
+/// groups unchanged.
+pub fn ungroup(d : Doc) -> Doc {
+  let work = [Visit(d)]
+  let results : Array[Doc] = []
+  while work.pop() is Some(step) {
+    match step {
+      Visit(doc) => {
+        if !doc.outer_groups {
+          results.push(doc)
+          continue
+        }
+        match doc.node {
+          Group(child) | GroupAlone(child) => results.push(child)
+          Concat(a, b) => {
+            work.push(Rebuild(doc))
+            work.push(Visit(b))
+            work.push(Visit(a))
+          }
+          Nest(_, child)
+          | NestIfBroken(_, child)
+          | SetNesting(_, child)
+          | Align(child)
+          | Tab(_, child)
+          | ForceBreak(child)
+          | NextFits(child, _) => {
+            work.push(Rebuild(doc))
+            work.push(Visit(child))
+          }
+          IfBreak(broken, flat) => {
+            work.push(Rebuild(doc))
+            work.push(Visit(flat))
+            work.push(Visit(broken))
+          }
+          _ => results.push(doc)
+        }
+      }
+      Rebuild(doc) => {
+        let child = results.pop().unwrap()
+        let node = match doc.node {
+          Concat(_, _) => Concat(results.pop().unwrap(), child)
+          Nest(n, _) => Nest(n, child)
+          NestIfBroken(n, _) => NestIfBroken(n, child)
+          SetNesting(n, _) => SetNesting(n, child)
+          Align(_) => Align(child)
+          Tab(n, _) => Tab(n, child)
+          ForceBreak(_) => ForceBreak(child)
+          NextFits(_, mode) => NextFits(child, mode)
+          IfBreak(_, _) => IfBreak(results.pop().unwrap(), child)
+          other => other
+        }
+        results.push(make(node, doc.has_hardline))
+      }
+    }
+  }
+  results[0]
 }
