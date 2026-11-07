@@ -1,12 +1,13 @@
-///|
+----
 import {
   "moonbitlang/async@0.22.4",
   "moonbitlang/async@0.22.4/fs",
   "moonbitlang/x@0.5.5/sys",
   "moonbitlang/core/env",
-  "moonrockz/moonspec@0.11.0",
-  "moonrockz/expect@0.6.0",
+  "moonrockz/moonspec@0.12.0/async" @moonspec,
+  "moonrockz/expect@0.6.1",
 }
+----
 
 ///|
 /// Generate the grapheme tables and the conformance test of
@@ -26,11 +27,12 @@ let usage : String = "Usage: ucd.mbtx generate <ucd dir> <src/grapheme dir>"
 
 ///|
 /// One code point range with a property value.
+#derive(Eq, Debug)
 struct Range {
   lo : Int32
   hi : Int32
   value : String
-} derive(Eq, Debug)
+}
 
 ///|
 /// The value of a hexadecimal string such as `1F1E6`; `None` when it is
@@ -56,8 +58,8 @@ fn hex(s : String) -> Int32? {
 /// `InCB Value`. `None` for a comment, an empty line or any other line.
 fn parse_property_line(line : String) -> Range? {
   let body = match line.find("#") {
-    Some(i) => line.view(end_offset=i)
-    None => line.view()
+    Some(i) => line.exact_view(end=i)
+    None => line.exact_view()
   }
   let fields : Array[String] = body
     .split(";")
@@ -68,8 +70,8 @@ fn parse_property_line(line : String) -> Range? {
     Some(i) =>
       match
         (
-          hex(fields[0].view(end_offset=i).to_owned()),
-          hex(fields[0].view(start_offset=i + 2).to_owned()),
+          hex(fields[0].exact_view(end=i).to_owned()),
+          hex(fields[0].exact_view(start=i + 2).to_owned()),
         ) {
         (Some(lo), Some(hi)) => (lo, hi)
         _ => return None
@@ -118,23 +120,24 @@ fn header_version(line : String) -> String? {
   guard line.find("-") is Some(i) && line.find(".txt") is Some(j) && j > i else {
     return None
   }
-  Some(line.view(start_offset=i + 1, end_offset=j).to_owned())
+  Some(line.exact_view(start=i + 1, end=j).to_owned())
 }
 
 ///|
 /// A conformance case: code points and the UTF-16 offsets of the cluster
 /// starts.
+#derive(Eq, Debug)
 struct Case {
   code_points : Array[Int32]
   boundaries : Array[Int32]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Parse `÷ 0020 × 0308 ÷ 1F1E6 × 1F1E7 ÷ # ...`: a `÷` before a code
 /// point starts a cluster there, a `×` joins it to the previous one.
 fn parse_conformance_line(line : String) -> Case? {
   let body = match line.find("#") {
-    Some(i) => line.view(end_offset=i).to_owned()
+    Some(i) => line.exact_view(end=i).to_owned()
     None => line
   }
   let tokens : Array[String] = body
@@ -372,9 +375,9 @@ fn parse_ranges(text : String) -> Array[Range] {
     let dash = p.find("-").unwrap()
     let space = p.find(" ").unwrap()
     {
-      lo: hex(p.view(start_offset=2, end_offset=dash).to_owned()).unwrap(),
-      hi: hex(p.view(start_offset=dash + 3, end_offset=space).to_owned()).unwrap(),
-      value: p.view(start_offset=space + 1).to_owned(),
+      lo: hex(p.exact_view(start=2, end=dash).to_owned()).unwrap(),
+      hi: hex(p.exact_view(start=dash + 3, end=space).to_owned()).unwrap(),
+      value: p.exact_view(start=space + 1).to_owned(),
     }
   })
   .collect()

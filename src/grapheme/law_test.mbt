@@ -2,7 +2,8 @@
 /// Any UTF-16 text: code units picked from the classes the rules look at,
 /// so it holds surrogates in every combination, control characters, marks,
 /// joiners, regional indicators and conjuncts.
-struct Units(String) derive(Debug)
+#derive(Debug)
+struct Units(String)
 
 ///|
 let picks : Array[Int32] = [

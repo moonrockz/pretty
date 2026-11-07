@@ -1,6 +1,7 @@
 ///|
 /// A document built from the pretty-arena forms. Texts hold no spaces and
 /// no line feeds, so a line's width is its length.
+#derive(Debug)
 enum Arena {
   AText(String)
   AZero(String)
@@ -13,7 +14,7 @@ enum Arena {
   ANestIfBroken(Int32, Arena)
   ASetNesting(Int32, Arena)
   ACat(Arena, Arena)
-} derive(Debug)
+}
 
 ///|
 fn arena_pick(rs : @splitmix.RandomState, n : Int32) -> Int32 {
@@ -48,7 +49,8 @@ fn gen_arena(size : Int32, rs : @splitmix.RandomState) -> Arena {
 }
 
 ///|
-struct ArbArena(Arena) derive(Debug)
+#derive(Debug)
+struct ArbArena(Arena)
 
 ///|
 impl @quickcheck.Arbitrary for ArbArena with fn arbitrary(size, rs) {
@@ -79,12 +81,13 @@ fn arena_doc(a : Arena) -> @pretty.Doc {
 
 ///|
 /// pretty-arena's `Mode`.
+#derive(Eq)
 enum AMode {
   MUnbroken
   MBroken
   MForcedBroken
   MForcedUnbroken
-} derive(Eq)
+}
 
 ///|
 /// A queue item of the reference model: indentation, mode, document.

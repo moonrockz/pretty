@@ -14,10 +14,11 @@ priv enum Mode {
 /// The mode `render` starts in. `Broken` (the default) breaks a line that
 /// is outside every group; `Unbroken` keeps it flat, as pretty-arena's
 /// `pretty_print` does.
+#derive(Eq, Debug)
 pub(all) enum Start {
   Broken
   Unbroken
-} derive(Eq, Debug)
+}
 
 ///|
 priv struct Cmd {

@@ -5,7 +5,7 @@ version = "0.3.0"
 readme = "README.mbt.md"
 
 import {
-  "moonrockz/expect@0.6.0",
+  "moonrockz/expect@0.6.1",
 }
 
 repository = "https://github.com/moonrockz/pretty"

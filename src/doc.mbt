@@ -47,10 +47,11 @@ priv enum BreakKind {
 /// Whether a `next_break_fits` document is in force: `Enabled` makes the
 /// first break inside it count as a fit; `Disabled` turns off every
 /// enabled `next_break_fits` inside it.
+#derive(Eq, Debug)
 pub(all) enum NextBreakFits {
   Enabled
   Disabled
-} derive(Eq, Debug)
+}
 
 ///|
 fn make(node : DocNode, has_hardline : Bool) -> Doc {

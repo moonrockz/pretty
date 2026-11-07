@@ -2,9 +2,9 @@
 package "moonrockz/pretty/grapheme"
 
 // Values
-pub fn boundaries(String) -> Array[Int]
+pub fn boundaries(String) -> Array[Int32]
 
-pub fn count(String) -> Int
+pub fn count(String) -> Int32
 
 pub fn version() -> String
 
