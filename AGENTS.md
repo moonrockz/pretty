@@ -95,8 +95,10 @@ Tooling logic is written in MoonBit, not bash.
 - Put tooling logic in `scripts/<name>.mbtx`. Keep each mise task a one-line
   launcher: `exec moon run -q --target wasm scripts/<name>.mbtx -- <args>`.
 - Specify each script's behavior in `scripts/features/<name>.feature`, run
-  with moonspec from an `async test` in the script.
-- Pin module imports in each script to exact versions.
+  with moonspec from an `async test` in the script. Import the async facade:
+  `"moonrockz/moonspec@<version>/async" @moonspec`.
+- Write the imports of each script in frontmatter between `----` lines at
+  the start of the file. Pin module imports to exact versions.
 
 ## Conventional Commits
 

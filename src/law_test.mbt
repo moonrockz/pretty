@@ -1,6 +1,7 @@
 ///|
 /// A document description for laws: it builds a `Doc` and is the input of
 /// the reference model. Texts hold no spaces.
+#derive(Debug)
 enum Spec {
   SText(String)
   SLine
@@ -10,7 +11,7 @@ enum Spec {
   STab(Int32, Spec)
   SGroup(Spec)
   SCat(Spec, Spec)
-} derive(Debug)
+}
 
 ///|
 fn pick(rs : @splitmix.RandomState, n : Int32) -> Int32 {
@@ -37,7 +38,8 @@ fn gen_spec(size : Int32, rs : @splitmix.RandomState) -> Spec {
 }
 
 ///|
-struct Arb(Spec) derive(Debug)
+#derive(Debug)
+struct Arb(Spec)
 
 ///|
 impl @quickcheck.Arbitrary for Arb with fn arbitrary(size, rs) {
@@ -48,7 +50,8 @@ impl @quickcheck.Arbitrary for Arb with fn arbitrary(size, rs) {
 impl @quickcheck.Shrink for Arb
 
 ///|
-struct Three(Spec, Spec, Spec) derive(Debug)
+#derive(Debug)
+struct Three(Spec, Spec, Spec)
 
 ///|
 impl @quickcheck.Arbitrary for Three with fn arbitrary(size, rs) {
